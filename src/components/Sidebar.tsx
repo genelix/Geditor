@@ -24,12 +24,38 @@ import {
   Star,
   StarOff,
   X,
+  FolderUp,
 } from 'lucide-react';
 import { FileNode, SearchMatch } from '../types';
 import { tauriApi, isSupportedTextFile } from '../services/tauriApi';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 const FAVORITES_STORAGE_KEY = 'geditor_favorite_folders';
+
+function getCommonAncestor(pathA: string, pathB: string): string {
+  if (!pathA || !pathB) return pathA || pathB;
+  const normA = pathA.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normB = pathB.replace(/\\/g, '/').replace(/\/+$/, '');
+
+  const partsA = normA.split('/').filter(Boolean);
+  const partsB = normB.split('/').filter(Boolean);
+
+  const common: string[] = [];
+  const minLen = Math.min(partsA.length, partsB.length);
+  for (let i = 0; i < minLen; i++) {
+    if (partsA[i] === partsB[i]) {
+      common.push(partsA[i]);
+    } else {
+      break;
+    }
+  }
+
+  const isUnix = pathA.startsWith('/') || pathB.startsWith('/');
+  if (common.length === 0) {
+    return isUnix ? '/' : normA;
+  }
+  return (isUnix ? '/' : '') + common.join('/');
+}
 
 interface SidebarProps {
   workspacePath: string;
@@ -83,6 +109,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchResults, setSearchResults] = useState<SearchMatch[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Selected / Highlighted folder or file path in tree
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
   // Expanded folders cache
   const [expandedFolders, setExpandedFolders] = useState<Record<string, FileNode[]>>({});
 
@@ -94,6 +123,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
     isFavoriteItem?: boolean;
     favoritePath?: string;
   } | null>(null);
+
+  // Parent directory calculations for Go To Parent Folder button
+  const normalizedWorkspace = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const lastSlashIndex = normalizedWorkspace.lastIndexOf('/');
+  const parentDirPath =
+    lastSlashIndex > 0
+      ? normalizedWorkspace.substring(0, lastSlashIndex)
+      : lastSlashIndex === 0
+      ? '/'
+      : '';
+  const canGoToParent = !!parentDirPath && parentDirPath !== normalizedWorkspace;
+
+  const handleGoToParentFolder = () => {
+    if (canGoToParent && onChangeWorkspace) {
+      onChangeWorkspace(parentDirPath);
+    }
+  };
 
   const handleToggleFavorite = (folderPath: string) => {
     setFavoriteFolders((prev) => {
@@ -140,14 +186,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleClickFavorite = async (favPath: string) => {
-    if (favPath === workspacePath) {
+    const normWorkspace = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
+    const normFav = favPath.replace(/\\/g, '/').replace(/\/+$/, '');
+
+    // Case 1: Exact match with current workspace
+    if (normFav === normWorkspace) {
       onRefreshWorkspace();
+      setSelectedPath(normFav);
       return;
     }
-    if (favPath.startsWith(workspacePath + '/')) {
-      const relative = favPath.slice(workspacePath.length).replace(/^\/+/, '');
+
+    let activeRoot = normWorkspace;
+
+    // Case 2: favPath is inside current workspace -> Keep root as is!
+    if (normFav.startsWith(normWorkspace + '/')) {
+      activeRoot = normWorkspace;
+    } else {
+      // Case 3: favPath is outside current workspace -> Find common ancestor or parent of favPath
+      const common = getCommonAncestor(normWorkspace, normFav);
+      const commonParts = common.split('/').filter(Boolean);
+
+      if (commonParts.length >= 2) {
+        activeRoot = common;
+      } else {
+        const lastSlash = normFav.lastIndexOf('/');
+        const parentOfFav = lastSlash > 0 ? normFav.substring(0, lastSlash) : normFav;
+        activeRoot = parentOfFav || normFav;
+      }
+
+      if (onChangeWorkspace && activeRoot !== normWorkspace) {
+        await onChangeWorkspace(activeRoot);
+      }
+    }
+
+    // Expand path from activeRoot down to normFav
+    if (normFav.startsWith(activeRoot + '/')) {
+      const relative = normFav.slice(activeRoot.length).replace(/^\/+/, '');
       const segments = relative.split('/');
-      let currentSub = workspacePath;
+      let currentSub = activeRoot;
       const nextExpanded = { ...expandedFolders };
 
       for (const seg of segments) {
@@ -160,11 +236,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
       }
       setExpandedFolders(nextExpanded);
-    } else {
-      if (onChangeWorkspace) {
-        onChangeWorkspace(favPath);
-      }
     }
+
+    setSelectedPath(normFav);
+
+    // Smooth scroll to target element
+    setTimeout(() => {
+      const el = document.getElementById(`file-item-${encodeURIComponent(normFav)}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 200);
   };
 
   const handleToggleFolder = async (folderPath: string) => {
@@ -354,24 +436,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (contextMenu.isFavoriteItem && contextMenu.favoritePath) {
       const fPath = contextMenu.favoritePath;
       const fName = fPath.split('/').filter(Boolean).pop() || fPath;
-      const isCurrentWorkspace = fPath === workspacePath;
       return [
         {
-          label: isCurrentWorkspace ? '현재 워크스페이스 (새로고침)' : `"${fName}" 워크스페이스로 열기`,
-          icon: <FolderOpen size={14} color="#38bdf8" />,
+          label: '폴더 경로로 이동 (트리에서 펼치기)',
+          icon: <ChevronRight size={14} color="#38bdf8" />,
+          onClick: () => handleClickFavorite(fPath),
+        },
+        {
+          label: '상위 폴더 기준으로 열기 (전체 트리 유지)',
+          icon: <FolderUp size={14} />,
           onClick: () => {
-            if (onChangeWorkspace) {
-              onChangeWorkspace(fPath);
-            } else {
-              handleClickFavorite(fPath);
-            }
+            const lastSlash = fPath.lastIndexOf('/');
+            const parent = lastSlash > 0 ? fPath.substring(0, lastSlash) : fPath;
+            if (onChangeWorkspace) onChangeWorkspace(parent);
+            handleClickFavorite(fPath);
           },
         },
         {
-          label: '트리에서 탐색 / 펼치기',
-          icon: <ChevronRight size={14} />,
-          onClick: () => handleClickFavorite(fPath),
+          label: `"${fName}" 폴더만 단독 워크스페이스로 열기`,
+          icon: <FolderOpen size={14} color="#a1a1aa" />,
+          onClick: () => onChangeWorkspace?.(fPath),
         },
+        { separator: true },
         {
           label: '새 파일 생성...',
           icon: <FilePlus size={14} />,
@@ -524,11 +610,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const isExpanded = !!expandedFolders[item.path];
       const isBinary = !item.is_dir && !isSupportedTextFile(item.name, blockedExtensions).ok;
       const isFav = item.is_dir && favoriteFolders.includes(item.path);
+      const isSelected = item.path === selectedPath;
 
       return (
         <div key={item.path}>
           <div
+            id={`file-item-${encodeURIComponent(item.path)}`}
             onClick={() => {
+              setSelectedPath(item.path);
               if (item.is_dir) {
                 handleToggleFolder(item.path);
               } else {
@@ -538,6 +627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              setSelectedPath(item.path);
               setContextMenu({ x: e.clientX, y: e.clientY, item });
             }}
             title={item.name}
@@ -547,22 +637,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
               padding: '4px 8px',
               paddingLeft: `${depth * 14 + 10}px`,
               fontSize: '12px',
-              color: isBinary
+              color: isSelected
+                ? isLight
+                  ? '#0284c7'
+                  : '#38bdf8'
+                : isBinary
                 ? isLight
                   ? '#9ca3af'
                   : '#71717a'
                 : isLight
                 ? '#27272a'
                 : '#d4d4d8',
+              backgroundColor: isSelected
+                ? isLight
+                  ? '#e0f2fe'
+                  : '#1e293b'
+                : 'transparent',
+              borderLeft: isSelected
+                ? '3px solid #38bdf8'
+                : '3px solid transparent',
               cursor: 'pointer',
               userSelect: 'none',
               gap: '6px',
               minWidth: 'max-content',
+              transition: 'background-color 0.1s, border-left-color 0.1s',
             }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundColor = isLight ? '#e4e4e7' : '#27272a')
-            }
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            onMouseEnter={(e) => {
+              if (!isSelected) {
+                e.currentTarget.style.backgroundColor = isLight ? '#e4e4e7' : '#27272a';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isSelected) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
           >
             {item.is_dir ? (
               isExpanded ? (
@@ -890,6 +999,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               borderBottom: isLight ? '1px solid #e4e4e7' : '1px solid #27272a',
             }}
           >
+            {/* Go to parent folder button */}
+            {canGoToParent && (
+              <button
+                onClick={handleGoToParentFolder}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: isLight ? '#0284c7' : '#38bdf8',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title={`상위 폴더로 이동: ${parentDirPath}`}
+              >
+                <FolderUp size={14} />
+              </button>
+            )}
             <Folder size={13} color="#0284c7" />
             <span
               style={{
