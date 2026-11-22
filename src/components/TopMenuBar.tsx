@@ -1,0 +1,510 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { EditorSettings } from '../types';
+import {
+  FileText,
+  Save,
+  X,
+  Columns,
+  Rows,
+  Terminal,
+  Settings,
+  Sun,
+  Moon,
+  Sparkles,
+  HelpCircle,
+  FolderTree,
+} from 'lucide-react';
+
+interface TopMenuBarProps {
+  isLight: boolean;
+  settings: EditorSettings;
+  onNewFile: () => void;
+  onSaveFile: () => void;
+  onCloseTab: () => void;
+  onToggleSidebar: () => void;
+  onSplitRight: () => void;
+  onSplitDown: () => void;
+  onOpenTerminal: () => void;
+  onOpenSettings: () => void;
+  onUpdateSettings: (settings: EditorSettings) => void;
+}
+
+type MenuKey = 'file' | 'edit' | 'view' | 'settings' | 'help' | null;
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+const modKey = isMac ? '⌘' : 'Ctrl+';
+const redoKey = isMac ? '⇧⌘Z' : 'Ctrl+Y';
+
+export const TopMenuBar: React.FC<TopMenuBarProps> = ({
+  isLight,
+  settings,
+  onNewFile,
+  onSaveFile,
+  onCloseTab,
+  onToggleSidebar,
+  onSplitRight,
+  onSplitDown,
+  onOpenTerminal,
+  onOpenSettings,
+  onUpdateSettings,
+}) => {
+  const [openMenu, setOpenMenu] = useState<MenuKey>(null);
+  const menuBarRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenMenu(null);
+      }
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const handleMenuClick = (key: MenuKey) => {
+    setOpenMenu((prev) => (prev === key ? null : key));
+  };
+
+  const handleMenuHover = (key: MenuKey) => {
+    if (openMenu !== null) {
+      setOpenMenu(key);
+    }
+  };
+
+  const executeAction = (action: () => void) => {
+    setOpenMenu(null);
+    action();
+  };
+
+  const menuButtonBaseStyle: React.CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '12px',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    color: isLight ? '#27272a' : '#e4e4e7',
+    fontWeight: 500,
+  };
+
+  const dropdownContainerStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    backgroundColor: isLight ? '#ffffff' : '#1e1e24',
+    border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+    borderRadius: '6px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+    minWidth: '220px',
+    padding: '4px',
+    zIndex: 9999,
+    fontSize: '12px',
+  };
+
+  const dropdownItemStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 10px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    color: isLight ? '#18181b' : '#f4f4f5',
+    userSelect: 'none',
+  };
+
+  const shortcutStyle: React.CSSProperties = {
+    fontSize: '11px',
+    color: isLight ? '#71717a' : '#a1a1aa',
+    marginLeft: '16px',
+  };
+
+  const separatorStyle: React.CSSProperties = {
+    height: '1px',
+    backgroundColor: isLight ? '#e4e4e7' : '#2e2e34',
+    margin: '4px 0',
+  };
+
+  return (
+    <div
+      ref={menuBarRef}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        height: '27px',
+        backgroundColor: isLight ? '#ececed' : '#1a1a1d',
+        borderBottom: isLight ? '1px solid #d4d4d8' : '1px solid #27272a',
+        padding: '0 8px',
+        userSelect: 'none',
+        fontSize: '12px',
+        position: 'relative',
+        zIndex: 500,
+      }}
+    >
+      {/* 1. 파일 (File) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('file')}
+          onMouseEnter={() => handleMenuHover('file')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'file' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+          }}
+        >
+          파일
+        </button>
+        {openMenu === 'file' && (
+          <div style={dropdownContainerStyle}>
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onNewFile)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={14} />
+                <span>새 파일</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}N</span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onSaveFile)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Save size={14} />
+                <span>파일 저장</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}S</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onCloseTab)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <X size={14} />
+                <span>탭 / 창 닫기</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}W</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. 편집 (Edit) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('edit')}
+          onMouseEnter={() => handleMenuHover('edit')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'edit' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+          }}
+        >
+          편집
+        </button>
+        {openMenu === 'edit' && (
+          <div style={dropdownContainerStyle}>
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => document.execCommand('undo'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span>실행 취소 (Undo)</span>
+              <span style={shortcutStyle}>{modKey}Z</span>
+            </div>
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => document.execCommand('redo'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span>다시 실행 (Redo)</span>
+              <span style={shortcutStyle}>{redoKey}</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => document.execCommand('selectAll'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span>모두 선택</span>
+              <span style={shortcutStyle}>{modKey}A</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. 보기 (View) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('view')}
+          onMouseEnter={() => handleMenuHover('view')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'view' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+          }}
+        >
+          보기
+        </button>
+        {openMenu === 'view' && (
+          <div style={dropdownContainerStyle}>
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onToggleSidebar)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderTree size={14} />
+                <span>탐색기 표시 / 숨기기</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}B</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onSplitRight)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Columns size={14} />
+                <span>화면 우측으로 분할</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}\</span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onSplitDown)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Rows size={14} />
+                <span>화면 하단으로 분할</span>
+              </div>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(onOpenTerminal)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={14} />
+                <span>내장 터미널 ({isMac ? 'zsh' : 'PowerShell'}) 추가</span>
+              </div>
+              <span style={shortcutStyle}>{modKey}T</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. 설정 (Settings / Preferences) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('settings')}
+          onMouseEnter={() => handleMenuHover('settings')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'settings' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+            color: '#0284c7',
+            fontWeight: 600,
+          }}
+        >
+          설정
+        </button>
+        {openMenu === 'settings' && (
+          <div style={dropdownContainerStyle}>
+            <div
+              style={{
+                ...dropdownItemStyle,
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              onClick={() => executeAction(onOpenSettings)}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings size={14} />
+                <span>환경설정 열기 (Preferences)...</span>
+              </div>
+              <span style={shortcutStyle}>{modKey},</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onUpdateSettings({ ...settings, theme: 'vs-dark' }))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Moon size={14} />
+                <span>다크 테마 (VS Dark)</span>
+              </div>
+              {settings.theme === 'vs-dark' && <span style={{ color: '#38bdf8' }}>✓</span>}
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onUpdateSettings({ ...settings, theme: 'vs' }))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sun size={14} />
+                <span>라이트 테마 (VS Light)</span>
+              </div>
+              {settings.theme === 'vs' && <span style={{ color: '#38bdf8' }}>✓</span>}
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onUpdateSettings({ ...settings, theme: 'hc-black' }))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={14} />
+                <span>고대비 블랙 테마 (High Contrast)</span>
+              </div>
+              {settings.theme === 'hc-black' && <span style={{ color: '#38bdf8' }}>✓</span>}
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() =>
+                executeAction(() =>
+                  onUpdateSettings({ ...settings, wordWrap: settings.wordWrap === 'on' ? 'off' : 'on' })
+                )
+              }
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span>자동 줄바꿈 (Word Wrap)</span>
+              <span style={{ color: settings.wordWrap === 'on' ? '#38bdf8' : '#71717a' }}>
+                {settings.wordWrap === 'on' ? '켜짐 ✓' : '꺼짐'}
+              </span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() =>
+                executeAction(() =>
+                  onUpdateSettings({ ...settings, showMinimap: !settings.showMinimap })
+                )
+              }
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span>미니맵 표시 (Minimap)</span>
+              <span style={{ color: settings.showMinimap ? '#38bdf8' : '#71717a' }}>
+                {settings.showMinimap ? '켜짐 ✓' : '꺼짐'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. 도움말 (Help) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('help')}
+          onMouseEnter={() => handleMenuHover('help')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'help' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+          }}
+        >
+          도움말
+        </button>
+        {openMenu === 'help' && (
+          <div style={dropdownContainerStyle}>
+            <div
+              style={dropdownItemStyle}
+              onClick={() =>
+                executeAction(() => {
+                  alert(
+                    'Geditor v0.1.0 (Windows / macOS 지원)\n\n' +
+                      '고성능 Rust 코어 기반 경량 텍스트 에디터\n\n' +
+                      '단축키 안내:\n' +
+                      `• ${modKey}S: 파일 저장\n` +
+                      `• ${modKey}N: 새 파일 생성\n` +
+                      `• ${modKey}W: 탭 / 패널 닫기\n` +
+                      `• ${modKey}B: 탐색기 토글\n` +
+                      `• ${modKey}\\: 우측 화면 분할\n` +
+                      `• ${modKey}T: 내장 터미널 열기\n` +
+                      `• ${modKey},: 환경설정 열기`
+                  );
+                })
+              }
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HelpCircle size={14} />
+                <span>Geditor 정보 및 단축키 안내</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Quick Settings Shortcut button on the right of the menu bar */}
+      <button
+        onClick={onOpenSettings}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          border: 'none',
+          background: isLight ? '#d4d4d8' : '#27272a',
+          color: isLight ? '#18181b' : '#f4f4f5',
+          borderRadius: '4px',
+          padding: '2px 8px',
+          fontSize: '11px',
+          cursor: 'pointer',
+          fontWeight: 500,
+        }}
+        title={`환경설정 열기 (${modKey},)`}
+      >
+        <Settings size={12} color="#0284c7" />
+        <span>환경설정 ({modKey},)</span>
+      </button>
+    </div>
+  );
+};

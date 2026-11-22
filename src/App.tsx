@@ -1,0 +1,802 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
+import { TabItem, PaneItem, PaneType, FileNode, SearchMatch, EditorSettings, DEFAULT_SETTINGS } from './types';
+import { tauriApi, detectLanguage, isSupportedTextFile } from './services/tauriApi';
+import { TopMenuBar } from './components/TopMenuBar';
+import { Sidebar } from './components/Sidebar';
+import { TabBar } from './components/TabBar';
+import { SplitContainer } from './components/SplitContainer';
+import { StatusBar } from './components/StatusBar';
+import { SettingsModal } from './components/SettingsModal';
+import { AlertTriangle, X } from 'lucide-react';
+
+const SETTINGS_STORAGE_KEY = 'geditor_settings';
+
+export default function App() {
+  const [workspacePath, setWorkspacePath] = useState<string>('');
+  const [files, setFiles] = useState<FileNode[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Resizable Sidebar width state
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('geditor_sidebar_width');
+      if (saved) return Math.max(160, Math.min(800, Number(saved)));
+    } catch (e) {}
+    return 260;
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
+  // Toast / notification banner for binary or error feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+  };
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  // Sidebar drag resize effect
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingSidebar) return;
+      const newWidth = Math.max(160, Math.min(800, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingSidebar) {
+        setIsResizingSidebar(false);
+        try {
+          localStorage.setItem('geditor_sidebar_width', sidebarWidth.toString());
+        } catch (e) {}
+      }
+    };
+
+    if (isResizingSidebar) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSidebar, sidebarWidth]);
+
+  // Prevent browser default English context menu across the entire app
+  useEffect(() => {
+    const handleGlobalContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('contextmenu', handleGlobalContextMenu);
+    return () => {
+      window.removeEventListener('contextmenu', handleGlobalContextMenu);
+    };
+  }, []);
+
+  // Settings State with LocalStorage persistence
+  const [settings, setSettings] = useState<EditorSettings>(() => {
+    try {
+      const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (saved) {
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+    return DEFAULT_SETTINGS;
+  });
+
+  const handleUpdateSettings = (newSettings: EditorSettings) => {
+    setSettings(newSettings);
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(newSettings));
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  };
+
+  const isLight = settings.theme === 'vs';
+
+  // Tabs state
+  const [tabs, setTabs] = useState<TabItem[]>([
+    {
+      id: 'tab-welcome',
+      path: '',
+      name: 'Welcome.md',
+      content: `# Geditor 🚀\n\n**Rust** 초고속 코어 기반의 현대적이고 가벼운 텍스트 에디터입니다.\n\n### 🌟 주요 기능\n- **초고속 Rust 코어**: 파일 I/O, 정규식 전역 검색, 한글 인코딩(UTF-8, EUC-KR) 자동 감지\n- **다중 패널 및 화면 분할**: 에디터, 내장 터미널, 마크다운 미리보기를 자유롭게 분할\n- **네이티브 터미널 (zsh)**: \`portable-pty\` 기반의 인터랙티브 macOS zsh 셸 내장\n- **풍부한 코드 문법 지원**: Python, JS, TS, HTML, CSS, Rust, Markdown, CSV 등 지원\n- **마크다운 듀얼 뷰**: 편집기 모드, 실시간 렌더링 미리보기, 나란히 보기 지원\n- **CSV 테이블 모드**: 대용량 CSV 파일을 테이블 그리드로 가독성 높게 조회\n- **사용자 환경 설정**: 글꼴, 크기, 컬러 테마, 커서 스타일, 들여쓰기, 자동 저장 등 맞춤 설정\n\n### ⌨️ 주요 단축키 안내\n- **Cmd + S**: 현재 파일 저장\n- **Cmd + N**: 새 파일 만들기\n- **Cmd + W**: 현재 탭 / 패널 닫기\n- **Cmd + B**: 좌측 탐색기 토글\n- **Cmd + \\\\**: 우측으로 화면 분할\n- **Cmd + T**: 하단 내장 터미널 추가\n- **Cmd + ,**: 환경설정 열기\n`,
+      savedContent: '',
+      isDirty: false,
+      encoding: 'UTF-8',
+      lineEnding: 'LF',
+      language: 'markdown',
+      viewMode: 'edit',
+    },
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>('tab-welcome');
+
+  // Split Panes state
+  const [panes, setPanes] = useState<PaneItem[]>([
+    {
+      id: 'pane-1',
+      type: 'editor',
+      title: '편집기',
+      tabId: 'tab-welcome',
+    },
+  ]);
+  const [activePaneId, setActivePaneId] = useState<string>('pane-1');
+  const [splitDirection, setSplitDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+
+  // Load workspace files on start
+  const refreshWorkspace = useCallback(async (path?: string) => {
+    const target = path || workspacePath;
+    if (!target) return;
+    try {
+      const items = await tauriApi.listDirectory(target);
+      setFiles(items);
+    } catch (e) {
+      console.error('Failed to list workspace:', e);
+    }
+  }, [workspacePath]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const defaultPath = await tauriApi.getDefaultWorkspace();
+        setWorkspacePath(defaultPath);
+        const items = await tauriApi.listDirectory(defaultPath);
+        setFiles(items);
+      } catch (e) {
+        console.error('Failed to init workspace:', e);
+      }
+    };
+    init();
+  }, []);
+
+  // Open file in editor
+  const handleOpenFile = async (filePath: string) => {
+    const fileName = filePath.split('/').pop() || filePath;
+    const check = isSupportedTextFile(fileName, settings.blockedExtensions);
+    if (!check.ok) {
+      showToast(check.reason || '바이너리 파일은 열 수 없습니다.');
+      return;
+    }
+
+    const existing = tabs.find((t) => t.path === filePath);
+    if (existing) {
+      setActiveTabId(existing.id);
+      setPanes((prev) =>
+        prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: existing.id } : p))
+      );
+      return;
+    }
+
+    try {
+      const payload = await tauriApi.readFile(filePath);
+      const language = detectLanguage(payload.name);
+      const newTab: TabItem = {
+        id: `tab-${Date.now()}`,
+        path: payload.path,
+        name: payload.name,
+        content: payload.content,
+        savedContent: payload.content,
+        isDirty: false,
+        encoding: payload.encoding,
+        lineEnding: payload.line_ending,
+        language,
+        viewMode: 'edit',
+      };
+
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+
+      setPanes((prev) =>
+        prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: newTab.id } : p))
+      );
+    } catch (err) {
+      showToast(`파일을 열 수 없습니다: ${err}`);
+    }
+  };
+
+  // Save current active tab
+  const handleSaveActiveTab = async () => {
+    const current = tabs.find((t) => t.id === activeTabId);
+    if (!current) return;
+
+    let targetPath = current.path;
+    if (!targetPath) {
+      const name = prompt('저장할 파일 이름을 입력하세요:', current.name);
+      if (!name) return;
+      targetPath = `${workspacePath}/${name}`;
+    }
+
+    try {
+      await tauriApi.writeFile(targetPath, current.content, current.encoding);
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === current.id
+            ? {
+                ...t,
+                path: targetPath,
+                name: targetPath.split('/').pop() || t.name,
+                savedContent: t.content,
+                isDirty: false,
+                language: detectLanguage(targetPath),
+              }
+            : t
+        )
+      );
+      refreshWorkspace();
+    } catch (err) {
+      alert(`저장에 실패했습니다: ${err}`);
+    }
+  };
+
+  // Auto-save debounce effect
+  const autoSaveTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!settings.autoSave) return;
+    const current = tabs.find((t) => t.id === activeTabId);
+    if (!current || !current.isDirty || !current.path) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await tauriApi.writeFile(current.path, current.content, current.encoding);
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === current.id ? { ...t, savedContent: current.content, isDirty: false } : t
+          )
+        );
+      } catch (err) {
+        console.error('Auto-save error:', err);
+      }
+    }, Math.max(1, settings.autoSaveDelaySec) * 1000);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [tabs, activeTabId, settings.autoSave, settings.autoSaveDelaySec]);
+
+  // New blank tab
+  const handleNewTab = () => {
+    const newTab: TabItem = {
+      id: `tab-${Date.now()}`,
+      path: '',
+      name: '새문서.txt',
+      content: '',
+      savedContent: '',
+      isDirty: false,
+      encoding: settings.defaultEncoding,
+      lineEnding: settings.defaultLineEnding,
+      language: 'plaintext',
+      viewMode: 'edit',
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
+  // Close tab
+  const handleCloseTab = (id: string) => {
+    const tabToClose = tabs.find((t) => t.id === id);
+    if (tabToClose?.isDirty) {
+      if (!confirm(`'${tabToClose.name}'의 변경 내용을 저장하시겠습니까?`)) {
+        // user chooses not to save
+      } else {
+        handleSaveActiveTab();
+      }
+    }
+
+    const filtered = tabs.filter((t) => t.id !== id);
+    setTabs(filtered);
+    if (activeTabId === id && filtered.length > 0) {
+      setActiveTabId(filtered[filtered.length - 1].id);
+    }
+  };
+
+  // Close other tabs
+  const handleCloseOtherTabs = (id: string) => {
+    const dirtyTabs = tabs.filter((t) => t.id !== id && t.isDirty);
+    if (dirtyTabs.length > 0) {
+      if (!confirm(`저장되지 않은 파일이 ${dirtyTabs.length}개 있습니다. 저장하지 않고 모두 닫으시겠습니까?`)) {
+        return;
+      }
+    }
+    const remaining = tabs.filter((t) => t.id === id);
+    setTabs(remaining);
+    setActiveTabId(id);
+    setPanes((prev) =>
+      prev.map((p) => (p.type === 'editor' ? { ...p, tabId: id } : p))
+    );
+  };
+
+  // Close tabs to right
+  const handleCloseTabsToRight = (id: string) => {
+    const idx = tabs.findIndex((t) => t.id === id);
+    if (idx === -1) return;
+    const rightTabs = tabs.slice(idx + 1);
+    const dirtyTabs = rightTabs.filter((t) => t.isDirty);
+    if (dirtyTabs.length > 0) {
+      if (!confirm(`오른쪽에 저장되지 않은 파일이 ${dirtyTabs.length}개 있습니다. 모두 닫으시겠습니까?`)) {
+        return;
+      }
+    }
+    const remaining = tabs.slice(0, idx + 1);
+    setTabs(remaining);
+    if (!remaining.some((t) => t.id === activeTabId)) {
+      setActiveTabId(id);
+      setPanes((prev) =>
+        prev.map((p) => (p.type === 'editor' ? { ...p, tabId: id } : p))
+      );
+    }
+  };
+
+  // Save specific tab
+  const handleSaveTab = async (id: string) => {
+    const current = tabs.find((t) => t.id === id);
+    if (!current) return;
+
+    let targetPath = current.path;
+    if (!targetPath) {
+      const name = prompt('저장할 파일 이름을 입력하세요:', current.name);
+      if (!name) return;
+      targetPath = `${workspacePath}/${name}`;
+    }
+
+    try {
+      await tauriApi.writeFile(targetPath, current.content, current.encoding);
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === current.id
+            ? {
+                ...t,
+                path: targetPath,
+                name: targetPath.split('/').pop() || t.name,
+                savedContent: t.content,
+                isDirty: false,
+                language: detectLanguage(targetPath),
+              }
+            : t
+        )
+      );
+      refreshWorkspace();
+    } catch (err) {
+      alert(`저장에 실패했습니다: ${err}`);
+    }
+  };
+
+  // Content change in editor
+  const handleChangeContent = (tabId: string, newContent: string) => {
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              content: newContent,
+              isDirty: newContent !== t.savedContent,
+            }
+          : t
+      )
+    );
+  };
+
+  // View mode update for Markdown / CSV
+  const handleUpdateViewMode = (tabId: string, mode: 'edit' | 'preview' | 'split') => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, viewMode: mode } : t)));
+  };
+
+  // Pane operations
+  const handleSplitPane = (_sourcePaneId: string, direction: 'horizontal' | 'vertical') => {
+    setSplitDirection(direction);
+    const newPaneId = `pane-${Date.now()}`;
+    const newPane: PaneItem = {
+      id: newPaneId,
+      type: 'editor',
+      title: '편집기',
+      tabId: activeTabId,
+    };
+    setPanes((prev) => [...prev, newPane]);
+    setActivePaneId(newPaneId);
+  };
+
+  const handleClosePane = (paneId: string) => {
+    if (panes.length <= 1) return;
+    const next = panes.filter((p) => p.id !== paneId);
+    setPanes(next);
+    if (activePaneId === paneId) {
+      setActivePaneId(next[0].id);
+    }
+  };
+
+  const handleChangePaneType = (
+    paneId: string,
+    newType: PaneType
+  ) => {
+    setPanes((prev) =>
+      prev.map((p) =>
+        p.id === paneId
+          ? {
+              ...p,
+              type: newType,
+              title:
+                newType === 'terminal'
+                  ? '터미널 (zsh)'
+                  : newType === 'markdown-preview'
+                  ? '마크다운 미리보기'
+                  : newType === 'csv-table'
+                  ? 'CSV 테이블'
+                  : newType === 'html-preview'
+                  ? 'HTML 웹 페이지'
+                  : '편집기',
+            }
+          : p
+      )
+    );
+  };
+
+  const handleAddTerminalPane = () => {
+    const termPaneId = `term-${Date.now()}`;
+    const newPane: PaneItem = {
+      id: termPaneId,
+      type: 'terminal',
+      title: '터미널 (zsh)',
+    };
+    setPanes((prev) => [...prev, newPane]);
+    setActivePaneId(termPaneId);
+  };
+
+  // Toggle encoding between UTF-8 and EUC-KR
+  const handleToggleEncoding = () => {
+    const current = tabs.find((t) => t.id === activeTabId);
+    if (!current) return;
+    const next = current.encoding === 'UTF-8' ? 'EUC-KR' : 'UTF-8';
+    setTabs((prev) =>
+      prev.map((t) => (t.id === current.id ? { ...t, encoding: next, isDirty: true } : t))
+    );
+  };
+
+  // Toggle line ending between LF and CRLF
+  const handleToggleLineEnding = () => {
+    const current = tabs.find((t) => t.id === activeTabId);
+    if (!current) return;
+    const next = current.lineEnding === 'LF' ? 'CRLF' : 'LF';
+    setTabs((prev) =>
+      prev.map((t) => (t.id === current.id ? { ...t, lineEnding: next, isDirty: true } : t))
+    );
+  };
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMeta = e.metaKey || e.ctrlKey;
+      if (isMeta && e.key === 's') {
+        e.preventDefault();
+        handleSaveActiveTab();
+      } else if (isMeta && e.key === 'n') {
+        e.preventDefault();
+        handleNewTab();
+      } else if (isMeta && e.key === 'w') {
+        e.preventDefault();
+        if (panes.length > 1) {
+          handleClosePane(activePaneId);
+        } else if (tabs.length > 0) {
+          handleCloseTab(activeTabId);
+        }
+      } else if (isMeta && e.key === 'b') {
+        e.preventDefault();
+        setIsSidebarOpen((v) => !v);
+      } else if (isMeta && e.key === '\\') {
+        e.preventDefault();
+        handleSplitPane(activePaneId, 'horizontal');
+      } else if (isMeta && e.key === 't') {
+        e.preventDefault();
+        handleAddTerminalPane();
+      } else if (isMeta && e.key === ',') {
+        e.preventDefault();
+        setIsSettingsOpen((v) => !v);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTabId, activePaneId, tabs, panes, workspacePath]);
+
+  // Listen to native macOS menu events
+  useEffect(() => {
+    const unlistenPromise = listen<string>('menu_event', (event) => {
+      const id = event.payload;
+      if (id === 'open_settings') {
+        setIsSettingsOpen(true);
+      } else if (id === 'new_file') {
+        handleNewTab();
+      } else if (id === 'save_file') {
+        handleSaveActiveTab();
+      } else if (id === 'close_tab') {
+        if (panes.length > 1) {
+          handleClosePane(activePaneId);
+        } else if (tabs.length > 0) {
+          handleCloseTab(activeTabId);
+        }
+      } else if (id === 'toggle_sidebar') {
+        setIsSidebarOpen((v) => !v);
+      } else if (id === 'split_right') {
+        handleSplitPane(activePaneId, 'horizontal');
+      } else if (id === 'open_terminal') {
+        handleAddTerminalPane();
+      } else if (id === 'theme_dark') {
+        handleUpdateSettings({ ...settings, theme: 'vs-dark' });
+      } else if (id === 'theme_light') {
+        handleUpdateSettings({ ...settings, theme: 'vs' });
+      } else if (id === 'theme_hc') {
+        handleUpdateSettings({ ...settings, theme: 'hc-black' });
+      } else if (id === 'toggle_maximize') {
+        getCurrentWindow().toggleMaximize().catch(console.error);
+      } else if (id === 'help_shortcuts') {
+        alert(
+          'Geditor v0.1.0\n\n' +
+            '고성능 Rust 코어 기반 경량 텍스트 에디터\n\n' +
+            '단축키 안내:\n' +
+            '• Cmd+S: 파일 저장\n' +
+            '• Cmd+N: 새 파일 생성\n' +
+            '• Cmd+W: 탭 / 패널 닫기\n' +
+            '• Cmd+B: 탐색기 토글\n' +
+            '• Cmd+\\: 우측 화면 분할\n' +
+            '• Cmd+T: 내장 터미널 열기\n' +
+            '• Cmd+,: 환경설정 열기'
+        );
+      }
+    });
+
+    return () => {
+      unlistenPromise.then((f) => f());
+    };
+  }, [activeTabId, activePaneId, tabs, panes, settings]);
+
+  // Handle window dragging & double-click maximize
+  const handleTitleBarMouseDown = async (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+
+    if (e.detail === 2) {
+      try {
+        await getCurrentWindow().toggleMaximize();
+      } catch (err) {
+        console.error('Failed to toggle maximize:', err);
+      }
+      return;
+    }
+
+    try {
+      await getCurrentWindow().startDragging();
+    } catch (err) {
+      console.error('Failed to start dragging:', err);
+    }
+  };
+
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: isLight ? '#ffffff' : '#18181b',
+        color: isLight ? '#18181b' : '#f4f4f5',
+        overflow: 'hidden',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}
+    >
+      {/* Native-style drag header bar for macOS */}
+      <div
+        data-tauri-drag-region
+        onMouseDown={handleTitleBarMouseDown}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          height: '28px',
+          backgroundColor: isLight ? '#f4f4f5' : '#141416',
+          borderBottom: isLight ? '1px solid #e4e4e7' : '1px solid #27272a',
+          paddingLeft: '78px', // Space for macOS window traffic lights
+          paddingRight: '12px',
+          fontSize: '11px',
+          color: isLight ? '#71717a' : '#a1a1aa',
+          userSelect: 'none',
+          cursor: 'default',
+        }}
+      >
+        <span style={{ fontWeight: 600, color: isLight ? '#0284c7' : '#38bdf8', pointerEvents: 'none' }}>Geditor</span>
+        <span style={{ margin: '0 8px', pointerEvents: 'none' }}>—</span>
+        <span style={{ pointerEvents: 'none' }}>{activeTab ? activeTab.name : '열린 파일 없음'}</span>
+        {activeTab?.isDirty && <span style={{ color: '#38bdf8', marginLeft: '6px', pointerEvents: 'none' }}>●</span>}
+
+        <div style={{ flex: 1, height: '100%', pointerEvents: 'none' }} />
+        <span style={{ fontSize: '10px', color: isLight ? '#a1a1aa' : '#52525b', pointerEvents: 'none' }}>
+          Cmd+S 저장 | Cmd+N 새 파일 | Cmd+B 탐색기 | Cmd+\ 우측 분할 | Cmd+T 터미널 | Cmd+, 환경설정
+        </span>
+      </div>
+
+      {/* In-Window Top Menu Bar */}
+      <TopMenuBar
+        isLight={isLight}
+        settings={settings}
+        onNewFile={handleNewTab}
+        onSaveFile={handleSaveActiveTab}
+        onCloseTab={() => {
+          if (panes.length > 1) {
+            handleClosePane(activePaneId);
+          } else if (tabs.length > 0) {
+            handleCloseTab(activeTabId);
+          }
+        }}
+        onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
+        onSplitRight={() => handleSplitPane(activePaneId, 'horizontal')}
+        onSplitDown={() => handleSplitPane(activePaneId, 'vertical')}
+        onOpenTerminal={handleAddTerminalPane}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onUpdateSettings={handleUpdateSettings}
+      />
+
+      {/* Main Workspace Body */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Sidebar */}
+        {isSidebarOpen && (
+          <Sidebar
+            workspacePath={workspacePath}
+            files={files}
+            isLight={isLight}
+            width={sidebarWidth}
+            blockedExtensions={settings.blockedExtensions}
+            onOpenFile={handleOpenFile}
+            onRefreshWorkspace={() => refreshWorkspace()}
+            onSelectSearchResult={(match: SearchMatch) => handleOpenFile(match.file_path)}
+          />
+        )}
+
+        {/* Draggable Divider for resizing Sidebar */}
+        {isSidebarOpen && (
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setIsResizingSidebar(true);
+            }}
+            style={{
+              width: '4px',
+              cursor: 'col-resize',
+              backgroundColor: isResizingSidebar
+                ? '#38bdf8'
+                : isLight
+                ? '#e4e4e7'
+                : '#27272a',
+              transition: isResizingSidebar ? 'none' : 'background-color 0.15s',
+              zIndex: 30,
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (!isResizingSidebar) e.currentTarget.style.backgroundColor = '#38bdf8';
+            }}
+            onMouseLeave={(e) => {
+              if (!isResizingSidebar)
+                e.currentTarget.style.backgroundColor = isLight ? '#e4e4e7' : '#27272a';
+            }}
+            title="드래그하여 탐색기 너비 조절"
+          />
+        )}
+
+        {/* Center Area (Tab bar + Split Panes) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            isLight={isLight}
+            onSelectTab={(id) => {
+              setActiveTabId(id);
+              setPanes((prev) =>
+                prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: id } : p))
+              );
+            }}
+            onCloseTab={handleCloseTab}
+            onCloseOtherTabs={handleCloseOtherTabs}
+            onCloseTabsToRight={handleCloseTabsToRight}
+            onSaveTab={handleSaveTab}
+            onNewTab={handleNewTab}
+            onSplitRight={() => handleSplitPane(activePaneId, 'horizontal')}
+            onSplitDown={() => handleSplitPane(activePaneId, 'vertical')}
+            onAddTerminalPane={handleAddTerminalPane}
+          />
+
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+            <SplitContainer
+              panes={panes}
+              activePaneId={activePaneId}
+              tabs={tabs}
+              activeTab={activeTab}
+              splitDirection={splitDirection}
+              workspacePath={workspacePath}
+              settings={settings}
+              onSelectPane={(id) => setActivePaneId(id)}
+              onClosePane={handleClosePane}
+              onSplitPane={handleSplitPane}
+              onChangePaneType={handleChangePaneType}
+              onChangeContent={handleChangeContent}
+              onUpdateViewMode={handleUpdateViewMode}
+              onOpenFile={handleOpenFile}
+              showToast={showToast}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Status Bar */}
+      <StatusBar
+        activeTab={activeTab}
+        paneCount={panes.length}
+        isLight={isLight}
+        onToggleTerminal={handleAddTerminalPane}
+        onToggleEncoding={handleToggleEncoding}
+        onToggleLineEnding={handleToggleLineEnding}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
+
+      {/* Preferences / Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Floating Warning/Error Toast */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '42px',
+            right: '20px',
+            backgroundColor: '#dc2626',
+            color: '#ffffff',
+            padding: '10px 14px',
+            borderRadius: '6px',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.45)',
+            fontSize: '12px',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            maxWidth: '420px',
+            lineHeight: '1.45',
+          }}
+        >
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{toastMessage}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#ffffff',
+              cursor: 'pointer',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
