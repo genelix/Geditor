@@ -158,13 +158,43 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   };
 
+  // Ask AI directly with selected code pre-filled into AI chat box
+  const handleAskAiWithSelection = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sel = editor.getSelection();
+    const model = editor.getModel();
+    if (!sel || sel.isEmpty() || !model) {
+      showToast?.('AI에 질문할 텍스트나 코드를 먼저 선택해 주세요.');
+      return;
+    }
+
+    const selectedCode = model.getValueInRange(sel);
+    const prompt = generateAiPrompt(selectedCode, tab.language, 'general');
+
+    try {
+      showToast?.('🤖 AI 도우미 창을 열고 선택한 질문을 자동 입력합니다...');
+      await tauriApi.askAiWithPrompt(prompt);
+    } catch (err) {
+      console.error('Failed to ask AI with prompt:', err);
+      showToast?.(`AI 질문 연동 실패: ${err}`);
+    }
+  };
+
   // Listen to custom smart insert event (dispatched by App.tsx, TopMenuBar or shortcuts)
   useEffect(() => {
     const onAiInsert = () => {
       handleSmartInsertAiCode();
     };
+    const onAskAi = () => {
+      handleAskAiWithSelection();
+    };
     window.addEventListener('geditor-smart-insert-ai', onAiInsert);
-    return () => window.removeEventListener('geditor-smart-insert-ai', onAiInsert);
+    window.addEventListener('geditor-ask-ai', onAskAi);
+    return () => {
+      window.removeEventListener('geditor-smart-insert-ai', onAiInsert);
+      window.removeEventListener('geditor-ask-ai', onAskAi);
+    };
   }, []);
 
   const handleEditorDidMount: OnMount = (editor) => {
@@ -173,6 +203,11 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     // Register Alt+V / Option+V inside Monaco Editor
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyV, () => {
       handleSmartInsertAiCode();
+    });
+
+    // Register Alt+A / Option+A to ask AI with current selection
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyA, () => {
+      handleAskAiWithSelection();
     });
 
     // Track text selection
@@ -344,8 +379,15 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       },
     },
     {
-      label: 'AI 코드 스마트 삽입',
+      label: 'AI에 질문하기 (자동 입력)',
       icon: <Sparkles size={14} color="#38bdf8" />,
+      shortcut: isMac ? '⌥A' : 'Alt+A',
+      disabled: !hasSelection,
+      onClick: handleAskAiWithSelection,
+    },
+    {
+      label: 'AI 코드 스마트 삽입',
+      icon: <Clipboard size={14} color="#38bdf8" />,
       shortcut: isMac ? '⌥V' : 'Alt+V',
       onClick: handleSmartInsertAiCode,
     },

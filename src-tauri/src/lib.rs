@@ -124,6 +124,7 @@ pub fn run() {
                     &MenuItem::with_id(app, "ai_snap", "에디터 우측에 나란히 붙이기 (Snap)", true, None::<&str>)?,
                     &MenuItem::with_id(app, "ai_always_on_top", "AI 도우미 항상 위에 고정 전환", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, "ai_ask", "선택 영역으로 AI에 질문하기 (자동 입력)", true, Some("Alt+A"))?,
                     &MenuItem::with_id(app, "ai_smart_insert", "AI 코드 스마트 삽입", true, Some("Alt+V"))?,
                 ],
             )?;
@@ -183,6 +184,7 @@ pub fn run() {
             ai_cmd::toggle_ai_assistant,
             ai_cmd::snap_ai_assistant,
             ai_cmd::set_ai_assistant_always_on_top,
+            ai_cmd::ask_ai_with_prompt,
             clipboard_cmd::read_clipboard_text,
             clipboard_cmd::write_clipboard_text,
             clipboard_cmd::open_in_browser,

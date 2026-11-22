@@ -42,6 +42,7 @@ interface TopMenuBarProps {
   onToggleAiAlwaysOnTop?: () => void;
   isAiAlwaysOnTop?: boolean;
   onSmartInsertAiCode?: () => void;
+  onAskAiWithSelection?: () => void;
 }
 
 type MenuKey = 'file' | 'edit' | 'view' | 'ai' | 'settings' | 'help' | null;
@@ -68,6 +69,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onToggleAiAlwaysOnTop,
   isAiAlwaysOnTop = false,
   onSmartInsertAiCode,
+  onAskAiWithSelection,
 }) => {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -507,6 +509,23 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             </div>
 
             <div style={separatorStyle} />
+
+            <div
+              style={{
+                ...dropdownItemStyle,
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              onClick={() => executeAction(() => onAskAiWithSelection?.())}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={14} color="#38bdf8" />
+                <span>AI에 질문하기 (선택 영역 자동 입력)</span>
+              </div>
+              <span style={shortcutStyle}>⌥A / Alt+A</span>
+            </div>
 
             <div
               style={{

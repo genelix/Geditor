@@ -125,6 +125,11 @@ export const tauriApi = {
     return await invoke('set_ai_assistant_always_on_top', { alwaysOnTop });
   },
 
+  // Ask AI with pre-filled text inserted into the AI's input box
+  askAiWithPrompt: async (prompt: string, service?: string): Promise<void> => {
+    return await invoke('ask_ai_with_prompt', { prompt, service });
+  },
+
   // Native Native Clipboard (bypasses browser permissions & WebKit Paste tooltip popups)
   readClipboard: async (): Promise<string> => {
     try {

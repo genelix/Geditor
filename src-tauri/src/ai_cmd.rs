@@ -118,3 +118,112 @@ pub async fn set_ai_assistant_always_on_top(app: AppHandle, always_on_top: bool)
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn ask_ai_with_prompt(
+    app: AppHandle,
+    prompt: String,
+    service: Option<String>,
+) -> Result<(), String> {
+    // 1. Copy prompt to native clipboard using arboard
+    let _ = crate::clipboard_cmd::write_clipboard_text(prompt.clone());
+
+    // 2. Open or show AI assistant window
+    let svc = service.unwrap_or_else(|| "gemini".to_string());
+    open_ai_assistant(app.clone(), svc, Some(false)).await?;
+
+    let ai_win = app.get_webview_window("ai-assistant").ok_or("AI Assistant window not found")?;
+    ai_win.show().map_err(|e| e.to_string())?;
+    ai_win.set_focus().map_err(|e| e.to_string())?;
+
+    // 3. Prepare injection script for Gemini, ChatGPT, Claude
+    let encoded_prompt = serde_json::to_string(&prompt).unwrap_or_else(|_| format!("\"{}\"", prompt));
+    let script = format!(
+        r#"
+        (function() {{
+            const text = {};
+            let attempts = 0;
+            const maxAttempts = 30;
+
+            function tryInject() {{
+                attempts++;
+                const selectors = [
+                    '#prompt-textarea',
+                    'rich-textarea div[contenteditable="true"]',
+                    'rich-textarea .ql-editor',
+                    'div.ProseMirror[contenteditable="true"]',
+                    'fieldset div[contenteditable="true"]',
+                    'div[contenteditable="true"][role="textbox"]',
+                    'div[contenteditable="true"]',
+                    'textarea:not([disabled])',
+                    'input[type="text"]:not([disabled])'
+                ];
+
+                let target = null;
+                for (const sel of selectors) {{
+                    const el = document.querySelector(sel);
+                    if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {{
+                        target = el;
+                        break;
+                    }}
+                }}
+
+                if (target) {{
+                    target.focus();
+                    let inserted = false;
+                    try {{
+                        if (target.isContentEditable) {{
+                            document.execCommand('selectAll', false, null);
+                            inserted = document.execCommand('insertText', false, text);
+                        }} else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {{
+                            target.select();
+                            inserted = document.execCommand('insertText', false, text);
+                            if (!inserted) {{
+                                const setter = Object.getOwnPropertyDescriptor(
+                                    target.tagName === 'TEXTAREA'
+                                        ? window.HTMLTextAreaElement.prototype
+                                        : window.HTMLInputElement.prototype,
+                                    'value'
+                                )?.set;
+                                if (setter) {{
+                                    setter.call(target, text);
+                                }} else {{
+                                    target.value = text;
+                                }}
+                            }}
+                        }}
+                    }} catch (e) {{
+                        console.error('Text insertion failed:', e);
+                    }}
+
+                    target.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    target.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    return true;
+                }}
+
+                if (attempts < maxAttempts) {{
+                    setTimeout(tryInject, 250);
+                }}
+                return false;
+            }}
+
+            tryInject();
+        }})();
+        "#,
+        encoded_prompt
+    );
+
+    // 4. Evaluate script in webview with retries for loading pages
+    let win_clone = ai_win.clone();
+    let script_clone = script.clone();
+    let _ = ai_win.eval(&script);
+
+    std::thread::spawn(move || {
+        for delay_ms in [600, 1400, 2500] {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let _ = win_clone.eval(&script_clone);
+        }
+    });
+
+    Ok(())
+}

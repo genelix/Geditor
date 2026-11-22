@@ -757,6 +757,10 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('geditor-smart-insert-ai'));
   }, []);
 
+  const handleAskAiWithSelection = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('geditor-ask-ai'));
+  }, []);
+
   const handleNewTabWithContent = useCallback((content: string, language?: string) => {
     const ext = language === 'python' ? 'py' : language === 'javascript' ? 'js' : language === 'typescript' ? 'ts' : language === 'html' ? 'html' : language === 'rust' ? 'rs' : language === 'markdown' ? 'md' : 'txt';
     const newTabId = `tab-${Date.now()}`;
@@ -818,6 +822,9 @@ export default function App() {
       } else if (isMeta && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         handleToggleAiAssistant();
+      } else if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        handleAskAiWithSelection();
       } else if (e.altKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV')) {
         e.preventDefault();
         handleSmartInsertAiCode();
@@ -832,7 +839,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt, handleOpenFolderPrompt, handleToggleAiAssistant, handleSmartInsertAiCode]);
+  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt, handleOpenFolderPrompt, handleToggleAiAssistant, handleSmartInsertAiCode, handleAskAiWithSelection]);
 
   // Listen to native menu events
   useEffect(() => {
@@ -872,6 +879,8 @@ export default function App() {
         handleSnapAiAssistant();
       } else if (id === 'ai_always_on_top') {
         handleToggleAiAlwaysOnTop();
+      } else if (id === 'ai_ask') {
+        handleAskAiWithSelection();
       } else if (id === 'ai_smart_insert') {
         handleSmartInsertAiCode();
       } else if (id === 'theme_dark') {
@@ -894,6 +903,7 @@ export default function App() {
             '• Cmd+\\: 우측 화면 분할\n' +
             '• Cmd+Shift+V: 실시간 나란히 보기\n' +
             '• Cmd+Shift+A: AI 도우미 창 열기/닫기\n' +
+            '• Alt+A: 선택 영역으로 AI에 질문하기\n' +
             '• Alt+V: AI 코드 스마트 삽입\n' +
             '• Cmd+T: 내장 터미널 열기\n' +
             '• Cmd+,: 환경설정 열기'
@@ -904,7 +914,7 @@ export default function App() {
     return () => {
       unlistenPromise.then((f) => f());
     };
-  }, [activeTabId, activePaneId, tabs, panes, settings, handleToggleAiAssistant, handleOpenAiAssistant, handleSnapAiAssistant, handleToggleAiAlwaysOnTop, handleSmartInsertAiCode]);
+  }, [activeTabId, activePaneId, tabs, panes, settings, handleToggleAiAssistant, handleOpenAiAssistant, handleSnapAiAssistant, handleToggleAiAlwaysOnTop, handleSmartInsertAiCode, handleAskAiWithSelection]);
 
   // Handle window dragging & double-click maximize
   const handleTitleBarMouseDown = async (e: React.MouseEvent) => {
@@ -999,6 +1009,7 @@ export default function App() {
         onToggleAiAlwaysOnTop={handleToggleAiAlwaysOnTop}
         isAiAlwaysOnTop={isAiAlwaysOnTop}
         onSmartInsertAiCode={handleSmartInsertAiCode}
+        onAskAiWithSelection={handleAskAiWithSelection}
       />
 
       {/* Main Workspace Body */}
