@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   RefreshCw,
   ExternalLink,
@@ -8,8 +8,10 @@ import {
   Sun,
   Moon,
   Globe,
+  Loader2,
 } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { tauriApi } from '../services/tauriApi';
 
 interface HtmlPreviewProps {
   content: string;
@@ -25,29 +27,137 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
   const [viewportMode, setViewportMode] = useState<'responsive' | 'tablet' | 'mobile'>('responsive');
   const [bgMode, setBgMode] = useState<'white' | 'dark'>('white');
   const [reloadKey, setReloadKey] = useState(0);
+  const [preparedHtml, setPreparedHtml] = useState<string>('');
+  const [isLoadingAssets, setIsLoadingAssets] = useState(false);
 
-  // Calculate base directory for resolving relative paths (CSS, images, JS)
-  const preparedHtml = useMemo(() => {
-    let html = content || '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p style="color:#888;padding:16px;">내용이 비어 있습니다.</p></body></html>';
+  // Automatically inline local CSS and JS files so that local web pages render 100% identically
+  useEffect(() => {
+    let isCancelled = false;
 
-    // Inject base href if filePath exists and no <base> tag is present
-    if (filePath && !/<base\s/i.test(html)) {
+    const prepareContent = async () => {
+      let rawHtml =
+        content ||
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><p style="color:#888;padding:16px;">내용이 비어 있습니다.</p></body></html>';
+
+      if (!filePath) {
+        setPreparedHtml(rawHtml);
+        return;
+      }
+
+      setIsLoadingAssets(true);
       const lastSlash = filePath.lastIndexOf('/');
       const baseDir = lastSlash !== -1 ? filePath.substring(0, lastSlash) : '';
-      if (baseDir) {
-        const baseTag = `<base href="file://${baseDir}/">`;
-        if (/<head[^>]*>/i.test(html)) {
-          html = html.replace(/<head[^>]*>/i, `$&${baseTag}`);
-        } else if (/<html[^>]*>/i.test(html)) {
-          html = html.replace(/<html[^>]*>/i, `$&<head>${baseTag}</head>`);
+
+      try {
+        // 1. Process local <link rel="stylesheet" href="...">
+        const linkRegex = /<link\s+[^>]*rel=["']stylesheet["'][^>]*>|<link\s+[^>]*href=["'][^"']+["'][^>]*rel=["']stylesheet["'][^>]*>/gi;
+        const linkMatches = [...rawHtml.matchAll(linkRegex)];
+
+        for (const match of linkMatches) {
+          const tag = match[0];
+          const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+          if (hrefMatch) {
+            const href = hrefMatch[1];
+            if (
+              !href.startsWith('http://') &&
+              !href.startsWith('https://') &&
+              !href.startsWith('//') &&
+              !href.startsWith('data:')
+            ) {
+              const fullCssPath = href.startsWith('/') ? href : `${baseDir}/${href}`;
+              try {
+                const fileData = await tauriApi.readFile(fullCssPath);
+                if (fileData && fileData.content) {
+                  const styleTag = `<style data-inlined="${href}">\n${fileData.content}\n</style>`;
+                  rawHtml = rawHtml.replace(tag, styleTag);
+                }
+              } catch (e) {
+                console.warn('Failed to inline CSS:', fullCssPath, e);
+              }
+            }
+          }
+        }
+
+        // 2. Process local <script src="...">
+        const scriptRegex = /<script\s+[^>]*src=["']([^"']+)["'][^>]*><\/script>/gi;
+        const scriptMatches = [...rawHtml.matchAll(scriptRegex)];
+
+        for (const match of scriptMatches) {
+          const tag = match[0];
+          const src = match[1];
+          if (
+            !src.startsWith('http://') &&
+            !src.startsWith('https://') &&
+            !src.startsWith('//') &&
+            !src.startsWith('data:')
+          ) {
+            const fullJsPath = src.startsWith('/') ? src : `${baseDir}/${src}`;
+            try {
+              const fileData = await tauriApi.readFile(fullJsPath);
+              if (fileData && fileData.content) {
+                const inlineScript = `<script data-inlined="${src}">\n${fileData.content}\n</script>`;
+                rawHtml = rawHtml.replace(tag, inlineScript);
+              }
+            } catch (e) {
+              console.warn('Failed to inline JS:', fullJsPath, e);
+            }
+          }
+        }
+
+        // 3. Inject base href for images and fonts fallback
+        if (baseDir && !/<base\s/i.test(rawHtml)) {
+          const baseTag = `<base href="file://${baseDir}/">`;
+          if (/<head[^>]*>/i.test(rawHtml)) {
+            rawHtml = rawHtml.replace(/<head[^>]*>/i, `$&${baseTag}`);
+          } else if (/<html[^>]*>/i.test(rawHtml)) {
+            rawHtml = rawHtml.replace(/<html[^>]*>/i, `$&<head>${baseTag}</head>`);
+          } else {
+            rawHtml = `<head>${baseTag}</head>${rawHtml}`;
+          }
+        }
+
+        // 4. Inject safe storage polyfill in case sandbox restricts localStorage
+        const storagePolyfill = `
+          <script>
+            try {
+              window.localStorage.getItem('__storage_test__');
+            } catch (e) {
+              console.warn('Polyfilling localStorage inside preview iframe:', e);
+              window._mockStorage = {};
+              window.localStorage = {
+                getItem: function(k) { return window._mockStorage[k] !== undefined ? window._mockStorage[k] : null; },
+                setItem: function(k, v) { window._mockStorage[k] = String(v); },
+                removeItem: function(k) { delete window._mockStorage[k]; },
+                clear: function() { window._mockStorage = {}; }
+              };
+            }
+          </script>
+        `;
+        if (/<head[^>]*>/i.test(rawHtml)) {
+          rawHtml = rawHtml.replace(/<head[^>]*>/i, `$&${storagePolyfill}`);
         } else {
-          html = `<head>${baseTag}</head>${html}`;
+          rawHtml = `${storagePolyfill}${rawHtml}`;
+        }
+
+        if (!isCancelled) {
+          setPreparedHtml(rawHtml);
+          setIsLoadingAssets(false);
+        }
+      } catch (err) {
+        console.error('Error preparing HTML:', err);
+        if (!isCancelled) {
+          setPreparedHtml(rawHtml);
+          setIsLoadingAssets(false);
         }
       }
-    }
+    };
 
-    return html;
-  }, [content, filePath]);
+    prepareContent();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [content, filePath, reloadKey]);
 
   const handleOpenInBrowser = async () => {
     if (!filePath) {
@@ -101,6 +211,13 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
           <Globe size={13} />
           HTML 실시간 렌더링
         </span>
+
+        {isLoadingAssets && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#a1a1aa', fontSize: '10px' }}>
+            <Loader2 size={11} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+            리소스 연결 중...
+          </span>
+        )}
 
         <div style={{ width: '1px', height: '14px', backgroundColor: isLight ? '#d4d4d8' : '#3f3f46', margin: '0 4px' }} />
 
@@ -167,10 +284,10 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
 
         <div style={{ width: '1px', height: '14px', backgroundColor: isLight ? '#d4d4d8' : '#3f3f46', margin: '0 4px' }} />
 
-        {/* Background color toggle */}
+        {/* Canvas background toggle */}
         <button
-          onClick={() => setBgMode((prev) => (prev === 'white' ? 'dark' : 'white'))}
-          title={bgMode === 'white' ? '어두운 배경으로 변경' : '밝은 배경으로 변경'}
+          onClick={() => setBgMode((m) => (m === 'white' ? 'dark' : 'white'))}
+          title={bgMode === 'white' ? '다크 캔버스 배경으로 전환' : '화이트 캔버스 배경으로 전환'}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -184,13 +301,13 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
           }}
         >
           {bgMode === 'white' ? <Moon size={12} /> : <Sun size={12} />}
-          {bgMode === 'white' ? '다크 배경' : '라이트 배경'}
+          {bgMode === 'white' ? '다크 배경' : '화이트 배경'}
         </button>
 
         {/* Reload button */}
         <button
           onClick={() => setReloadKey((k) => k + 1)}
-          title="페이지 새로고침"
+          title="미리보기 화면 새로고침"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -213,7 +330,7 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
         {filePath && (
           <button
             onClick={handleOpenInBrowser}
-            title="기본 웹 브라우저에서 열기"
+            title="기본 웹 브라우저(Safari/Chrome)에서 원본 전체화면으로 열기"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -225,6 +342,7 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
               backgroundColor: isLight ? '#ffffff' : '#27272a',
               color: isLight ? '#18181b' : '#f4f4f5',
               fontSize: '11px',
+              fontWeight: 500,
             }}
           >
             <ExternalLink size={12} />
@@ -262,7 +380,9 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
             key={reloadKey}
             title="HTML Preview"
             srcDoc={preparedHtml}
-            sandbox="allow-scripts allow-modals allow-forms allow-same-origin"
+            sandbox="allow-scripts allow-modals allow-forms allow-same-origin allow-popups allow-downloads"
+            allow="fullscreen; microphone; camera; display-capture"
+            allowFullScreen={true}
             style={{
               width: '100%',
               height: '100%',
