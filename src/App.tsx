@@ -9,7 +9,8 @@ import { TabBar } from './components/TabBar';
 import { SplitContainer } from './components/SplitContainer';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, X, Sparkles } from 'lucide-react';
+import { extractAiCode } from './utils/aiCodeParser';
 
 const SETTINGS_STORAGE_KEY = 'geditor_settings';
 
@@ -18,6 +19,15 @@ export default function App() {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // AI Assistant Window & Clipboard state
+  const [isAiAlwaysOnTop, setIsAiAlwaysOnTop] = useState(false);
+  const [aiClipboardPill, setAiClipboardPill] = useState<{
+    code: string;
+    language?: string;
+    lineCount: number;
+  } | null>(null);
+  const lastClipboardTextRef = useRef<string>('');
 
   // Resizable Sidebar width state
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -42,6 +52,49 @@ export default function App() {
     }, 4500);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  // Detect AI Code from clipboard on focus (e.g. returning from AI browser window)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const checkClipboardOnFocus = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text || !text.trim() || text === lastClipboardTextRef.current) {
+          return;
+        }
+        lastClipboardTextRef.current = text;
+
+        const parsed = extractAiCode(text);
+        const hasCodeHints =
+          parsed.isExtracted ||
+          (parsed.lineCount >= 2 &&
+            (/[;{}()<>=+\-*\/[\]]/.test(text) ||
+              /^(const|let|var|function|def|import|export|class|public|private|fn|struct|impl|if|for|while|return)\b/m.test(text)));
+
+        if (hasCodeHints && parsed.code.length > 5) {
+          setAiClipboardPill({
+            code: parsed.code,
+            language: parsed.language,
+            lineCount: parsed.lineCount,
+          });
+
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => {
+            setAiClipboardPill(null);
+          }, 8000);
+        }
+      } catch (e) {
+        // Clipboard read permission might not be granted
+      }
+    };
+
+    window.addEventListener('focus', checkClipboardOnFocus);
+    return () => {
+      window.removeEventListener('focus', checkClipboardOnFocus);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // Sidebar drag resize effect
   useEffect(() => {
@@ -652,6 +705,75 @@ export default function App() {
     );
   };
 
+  // AI Assistant Handlers
+  const handleOpenAiAssistant = useCallback(async (service: 'gemini' | 'chatgpt' | 'claude' = 'gemini') => {
+    try {
+      await tauriApi.openAiAssistant(service, false);
+    } catch (e) {
+      console.error('Failed to open AI assistant:', e);
+      showToast(`AI 도우미(${service}) 실행 실패: ${e}`);
+    }
+  }, []);
+
+  const handleToggleAiAssistant = useCallback(async (service?: string) => {
+    try {
+      const opened = await tauriApi.toggleAiAssistant(service);
+      if (opened) {
+        showToast('🤖 AI 도우미 창이 열렸습니다.');
+      }
+    } catch (e) {
+      console.error('Failed to toggle AI assistant:', e);
+    }
+  }, []);
+
+  const handleSnapAiAssistant = useCallback(async () => {
+    try {
+      await tauriApi.snapAiAssistant();
+      showToast('📌 AI 도우미 창을 에디터 우측에 나란히 배치했습니다.');
+    } catch (e) {
+      console.error('Failed to snap AI assistant:', e);
+      showToast('AI 도우미 창을 먼저 열어주세요.');
+    }
+  }, []);
+
+  const handleToggleAiAlwaysOnTop = useCallback(async () => {
+    try {
+      const next = !isAiAlwaysOnTop;
+      await tauriApi.setAiAssistantAlwaysOnTop(next);
+      setIsAiAlwaysOnTop(next);
+      showToast(next ? '📌 AI 도우미 창이 항상 위에 고정되었습니다.' : '📌 AI 도우미 창 고정이 해제되었습니다.');
+    } catch (e) {
+      console.error('Failed to toggle always on top:', e);
+    }
+  }, [isAiAlwaysOnTop]);
+
+  const handleSmartInsertAiCode = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('geditor-smart-insert-ai'));
+  }, []);
+
+  const handleNewTabWithContent = useCallback((content: string, language?: string) => {
+    const ext = language === 'python' ? 'py' : language === 'javascript' ? 'js' : language === 'typescript' ? 'ts' : language === 'html' ? 'html' : language === 'rust' ? 'rs' : language === 'markdown' ? 'md' : 'txt';
+    const newTabId = `tab-${Date.now()}`;
+    const newTab: TabItem = {
+      id: newTabId,
+      path: '',
+      name: `AI_Snippet.${ext}`,
+      content,
+      savedContent: '',
+      isDirty: true,
+      encoding: 'UTF-8',
+      lineEnding: 'LF',
+      language: language || 'plaintext',
+      viewMode: 'edit',
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTabId);
+    setPanes((prev) =>
+      prev.map((p) => (p.id === activePaneId ? { ...p, tabId: newTabId } : p))
+    );
+    showToast(`🤖 새 문서(AI_Snippet.${ext})가 생성되었습니다.`);
+  }, [activePaneId]);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -687,6 +809,12 @@ export default function App() {
       } else if (isMeta && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
         e.preventDefault();
         handleOpenPreviewSplit();
+      } else if (isMeta && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        handleToggleAiAssistant();
+      } else if (e.altKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV')) {
+        e.preventDefault();
+        handleSmartInsertAiCode();
       } else if (isMeta && e.key === 't') {
         e.preventDefault();
         handleAddTerminalPane();
@@ -698,9 +826,9 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt, handleOpenFolderPrompt]);
+  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt, handleOpenFolderPrompt, handleToggleAiAssistant, handleSmartInsertAiCode]);
 
-  // Listen to native macOS menu events
+  // Listen to native menu events
   useEffect(() => {
     const unlistenPromise = listen<string>('menu_event', (event) => {
       const id = event.payload;
@@ -726,6 +854,20 @@ export default function App() {
         handleSplitPane(activePaneId, 'horizontal');
       } else if (id === 'open_terminal') {
         handleAddTerminalPane();
+      } else if (id === 'ai_toggle') {
+        handleToggleAiAssistant();
+      } else if (id === 'ai_gemini') {
+        handleOpenAiAssistant('gemini');
+      } else if (id === 'ai_chatgpt') {
+        handleOpenAiAssistant('chatgpt');
+      } else if (id === 'ai_claude') {
+        handleOpenAiAssistant('claude');
+      } else if (id === 'ai_snap') {
+        handleSnapAiAssistant();
+      } else if (id === 'ai_always_on_top') {
+        handleToggleAiAlwaysOnTop();
+      } else if (id === 'ai_smart_insert') {
+        handleSmartInsertAiCode();
       } else if (id === 'theme_dark') {
         handleUpdateSettings({ ...settings, theme: 'vs-dark' });
       } else if (id === 'theme_light') {
@@ -744,6 +886,9 @@ export default function App() {
             '• Cmd+W: 탭 / 패널 닫기\n' +
             '• Cmd+B: 탐색기 토글\n' +
             '• Cmd+\\: 우측 화면 분할\n' +
+            '• Cmd+Shift+V: 실시간 나란히 보기\n' +
+            '• Cmd+Shift+A: AI 도우미 창 열기/닫기\n' +
+            '• Alt+V: AI 코드 스마트 삽입\n' +
             '• Cmd+T: 내장 터미널 열기\n' +
             '• Cmd+,: 환경설정 열기'
         );
@@ -753,7 +898,7 @@ export default function App() {
     return () => {
       unlistenPromise.then((f) => f());
     };
-  }, [activeTabId, activePaneId, tabs, panes, settings]);
+  }, [activeTabId, activePaneId, tabs, panes, settings, handleToggleAiAssistant, handleOpenAiAssistant, handleSnapAiAssistant, handleToggleAiAlwaysOnTop, handleSmartInsertAiCode]);
 
   // Handle window dragging & double-click maximize
   const handleTitleBarMouseDown = async (e: React.MouseEvent) => {
@@ -842,6 +987,12 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onUpdateSettings={handleUpdateSettings}
         onOpenPreviewSplit={handleOpenPreviewSplit}
+        onOpenAiAssistant={handleOpenAiAssistant}
+        onToggleAiAssistant={handleToggleAiAssistant}
+        onSnapAiAssistant={handleSnapAiAssistant}
+        onToggleAiAlwaysOnTop={handleToggleAiAlwaysOnTop}
+        isAiAlwaysOnTop={isAiAlwaysOnTop}
+        onSmartInsertAiCode={handleSmartInsertAiCode}
       />
 
       {/* Main Workspace Body */}
@@ -941,7 +1092,116 @@ export default function App() {
         onToggleEncoding={handleToggleEncoding}
         onToggleLineEnding={handleToggleLineEnding}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onToggleAiAssistant={handleToggleAiAssistant}
       />
+
+      {/* Floating AI Clipboard Pill */}
+      {aiClipboardPill && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '36px',
+            right: '24px',
+            backgroundColor: isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(24, 24, 27, 0.96)',
+            color: isLight ? '#18181b' : '#f4f4f5',
+            border: '1px solid #38bdf8',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Sparkles size={16} color="#38bdf8" />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>방금 복사한 AI 코드</span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    backgroundColor: '#0284c7',
+                    color: '#ffffff',
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                  }}
+                >
+                  {aiClipboardPill.lineCount}줄{aiClipboardPill.language ? ` · ${aiClipboardPill.language}` : ''}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: isLight ? '#71717a' : '#a1a1aa',
+                  maxWidth: '240px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {aiClipboardPill.code.split('\n')[0]}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={() => {
+                handleSmartInsertAiCode();
+                setAiClipboardPill(null);
+              }}
+              style={{
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '5px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="현재 커서 위치에 들여쓰기를 맞춰 삽입합니다 (Alt+V)"
+            >
+              커서에 삽입 (Alt+V)
+            </button>
+            <button
+              onClick={() => {
+                handleNewTabWithContent(aiClipboardPill.code, aiClipboardPill.language);
+                setAiClipboardPill(null);
+              }}
+              style={{
+                backgroundColor: isLight ? '#e4e4e7' : '#27272a',
+                color: isLight ? '#18181b' : '#f4f4f5',
+                border: 'none',
+                borderRadius: '5px',
+                padding: '4px 8px',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+              title="새 파일 탭을 열어 코드를 붙여넣습니다"
+            >
+              새 문서로
+            </button>
+            <button
+              onClick={() => setAiClipboardPill(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: isLight ? '#71717a' : '#a1a1aa',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                fontSize: '12px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Preferences / Settings Modal */}
       <SettingsModal
@@ -951,14 +1211,20 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
-      {/* Floating Warning/Error Toast */}
+      {/* Floating Warning/Info Toast */}
       {toastMessage && (
         <div
           style={{
             position: 'fixed',
             top: '42px',
             right: '20px',
-            backgroundColor: '#dc2626',
+            backgroundColor:
+              toastMessage.startsWith('🤖') ||
+              toastMessage.startsWith('✨') ||
+              toastMessage.startsWith('💡') ||
+              toastMessage.startsWith('📌')
+                ? '#0284c7'
+                : '#dc2626',
             color: '#ffffff',
             padding: '10px 14px',
             borderRadius: '6px',
@@ -972,7 +1238,14 @@ export default function App() {
             lineHeight: '1.45',
           }}
         >
-          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          {toastMessage.startsWith('🤖') ||
+          toastMessage.startsWith('✨') ||
+          toastMessage.startsWith('💡') ||
+          toastMessage.startsWith('📌') ? (
+            <Sparkles size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          ) : (
+            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          )}
           <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{toastMessage}</span>
           <button
             onClick={() => setToastMessage(null)}

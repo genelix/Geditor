@@ -1,6 +1,7 @@
 mod fs_cmd;
 mod pty_cmd;
 mod search_cmd;
+mod ai_cmd;
 
 use pty_cmd::PtyState;
 use std::collections::HashMap;
@@ -107,7 +108,26 @@ pub fn run() {
                 ],
             )?;
 
-            // 7. 도움말 (Help)
+            // 7. AI 도우미 (AI Assistant)
+            let ai_menu = Submenu::with_items(
+                app,
+                "AI 도우미",
+                true,
+                &[
+                    &MenuItem::with_id(app, "ai_toggle", "AI 도우미 토글 (열기/닫기)", true, Some("CmdOrCtrl+Shift+A"))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, "ai_gemini", "Google Gemini 열기", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "ai_chatgpt", "ChatGPT (Codex) 열기", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "ai_claude", "Anthropic Claude 열기", true, None::<&str>)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, "ai_snap", "에디터 우측에 나란히 붙이기 (Snap)", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "ai_always_on_top", "AI 도우미 항상 위에 고정 전환", true, None::<&str>)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, "ai_smart_insert", "AI 코드 스마트 삽입", true, Some("Alt+V"))?,
+                ],
+            )?;
+
+            // 8. 도움말 (Help)
             let help_menu = Submenu::with_items(
                 app,
                 "도움말",
@@ -124,6 +144,7 @@ pub fn run() {
                     &file_menu,
                     &edit_menu,
                     &view_menu,
+                    &ai_menu,
                     &settings_menu,
                     &window_menu,
                     &help_menu,
@@ -157,6 +178,10 @@ pub fn run() {
             pty_cmd::terminal_write,
             pty_cmd::terminal_resize,
             pty_cmd::terminal_close,
+            ai_cmd::open_ai_assistant,
+            ai_cmd::toggle_ai_assistant,
+            ai_cmd::snap_ai_assistant,
+            ai_cmd::set_ai_assistant_always_on_top,
         ])
         .run(tauri::generate_context!())
         .expect("error while running geditor application");

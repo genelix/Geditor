@@ -25,7 +25,10 @@ import {
   MessageSquareCode,
   Terminal,
   ExternalLink,
+  Sparkles,
+  Bot,
 } from 'lucide-react';
+import { extractAiCode, adjustIndentation, generateAiPrompt } from '../utils/aiCodeParser';
 
 // Configure monaco to use local installation (offline-ready)
 loader.config({ monaco });
@@ -87,8 +90,90 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   };
 
+  // Smart AI Code Insertion (Alt+V / ⌥V / Context Menu / Floating Pill)
+  const handleSmartInsertAiCode = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+
+    try {
+      const clipText = await navigator.clipboard.readText();
+      if (!clipText || !clipText.trim()) {
+        showToast?.('클립보드가 비어 있습니다.');
+        return;
+      }
+
+      const parsed = extractAiCode(clipText);
+      const model = editor.getModel();
+      const pos = editor.getPosition();
+      let currentLinePrefix = '';
+      if (model && pos) {
+        const lineContent = model.getLineContent(pos.lineNumber);
+        currentLinePrefix = lineContent.slice(0, pos.column - 1);
+      }
+
+      const formattedCode = adjustIndentation(parsed.code, currentLinePrefix);
+      const sel = editor.getSelection();
+
+      if (sel) {
+        editor.executeEdits('ai-insert', [
+          {
+            range: sel,
+            text: formattedCode,
+            forceMoveMarkers: true,
+          },
+        ]);
+        const newPos = editor.getPosition();
+        if (newPos) {
+          editor.revealPositionInCenterIfOutsideViewport(newPos);
+        }
+      }
+
+      const msg = parsed.isExtracted
+        ? `🤖 AI 코드 스마트 정돈 삽입 완료 (${parsed.lineCount}줄${parsed.language ? ` · ${parsed.language}` : ''})`
+        : `🤖 클립보드 코드 삽입 완료 (${parsed.lineCount}줄)`;
+      showToast?.(msg);
+    } catch (err) {
+      console.error('AI code insert failed:', err);
+      showToast?.('클립보드 접근 권한이 없거나 읽기에 실패했습니다.');
+    }
+  };
+
+  // Copy selected code with AI Prompt template
+  const handleCopyAsAiPrompt = async (intent: 'general' | 'fix' | 'optimize' | 'explain' = 'general') => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sel = editor.getSelection();
+    const model = editor.getModel();
+    if (!sel || sel.isEmpty() || !model) return;
+
+    const selectedCode = model.getValueInRange(sel);
+    const prompt = generateAiPrompt(selectedCode, tab.language, intent);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      showToast?.('💡 선택한 코드의 AI 질문 템플릿이 복사되었습니다. AI 도우미 창에 붙여넣으세요!');
+    } catch (err) {
+      console.error('Failed to copy prompt:', err);
+      showToast?.('클립보드 복사에 실패했습니다.');
+    }
+  };
+
+  // Listen to custom smart insert event (dispatched by App.tsx, TopMenuBar or shortcuts)
+  useEffect(() => {
+    const onAiInsert = () => {
+      handleSmartInsertAiCode();
+    };
+    window.addEventListener('geditor-smart-insert-ai', onAiInsert);
+    return () => window.removeEventListener('geditor-smart-insert-ai', onAiInsert);
+  }, []);
+
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
+
+    // Register Alt+V / Option+V inside Monaco Editor
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyV, () => {
+      handleSmartInsertAiCode();
+    });
 
     // Track text selection
     editor.onDidChangeCursorSelection(() => {
@@ -257,6 +342,18 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
           document.execCommand('paste');
         }
       },
+    },
+    {
+      label: 'AI 코드 스마트 삽입',
+      icon: <Sparkles size={14} color="#38bdf8" />,
+      shortcut: isMac ? '⌥V' : 'Alt+V',
+      onClick: handleSmartInsertAiCode,
+    },
+    {
+      label: '선택 코드로 AI 질문 복사',
+      icon: <Bot size={14} color="#a855f7" />,
+      disabled: !hasSelection,
+      onClick: () => handleCopyAsAiPrompt('general'),
     },
     {
       label: '삭제',

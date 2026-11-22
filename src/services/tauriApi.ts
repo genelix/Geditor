@@ -107,6 +107,23 @@ export const tauriApi = {
       callback(event.payload);
     });
   },
+
+  // AI Assistant Window
+  openAiAssistant: async (service: 'gemini' | 'chatgpt' | 'claude' | string = 'gemini', snap = false): Promise<void> => {
+    return await invoke('open_ai_assistant', { service, snap });
+  },
+
+  toggleAiAssistant: async (service?: string): Promise<boolean> => {
+    return await invoke<boolean>('toggle_ai_assistant', { service });
+  },
+
+  snapAiAssistant: async (): Promise<void> => {
+    return await invoke('snap_ai_assistant');
+  },
+
+  setAiAssistantAlwaysOnTop: async (alwaysOnTop: boolean): Promise<void> => {
+    return await invoke('set_ai_assistant_always_on_top', { alwaysOnTop });
+  },
 };
 
 export function detectLanguage(filename: string): string {

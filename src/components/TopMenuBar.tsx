@@ -14,6 +14,10 @@ import {
   HelpCircle,
   FolderTree,
   Folder,
+  Pin,
+  Zap,
+  Brain,
+  ClipboardPaste,
 } from 'lucide-react';
 
 interface TopMenuBarProps {
@@ -32,9 +36,15 @@ interface TopMenuBarProps {
   onOpenSettings: () => void;
   onUpdateSettings: (settings: EditorSettings) => void;
   onOpenPreviewSplit?: () => void;
+  onOpenAiAssistant?: (service: 'gemini' | 'chatgpt' | 'claude') => void;
+  onToggleAiAssistant?: () => void;
+  onSnapAiAssistant?: () => void;
+  onToggleAiAlwaysOnTop?: () => void;
+  isAiAlwaysOnTop?: boolean;
+  onSmartInsertAiCode?: () => void;
 }
 
-type MenuKey = 'file' | 'edit' | 'view' | 'settings' | 'help' | null;
+type MenuKey = 'file' | 'edit' | 'view' | 'ai' | 'settings' | 'help' | null;
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   isLight,
@@ -52,6 +62,12 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onOpenSettings,
   onUpdateSettings,
   onOpenPreviewSplit,
+  onOpenAiAssistant,
+  onToggleAiAssistant,
+  onSnapAiAssistant,
+  onToggleAiAlwaysOnTop,
+  isAiAlwaysOnTop = false,
+  onSmartInsertAiCode,
 }) => {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -392,7 +408,127 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
         )}
       </div>
 
-      {/* 4. 설정 (Settings / Preferences) */}
+      {/* 4. AI 도우미 (AI Assistant) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => handleMenuClick('ai')}
+          onMouseEnter={() => handleMenuHover('ai')}
+          style={{
+            ...menuButtonBaseStyle,
+            backgroundColor: openMenu === 'ai' ? (isLight ? '#d4d4d8' : '#2e2e34') : 'transparent',
+            color: '#38bdf8',
+            fontWeight: 600,
+          }}
+        >
+          🤖 AI 도우미
+        </button>
+        {openMenu === 'ai' && (
+          <div style={{ ...dropdownContainerStyle, width: '270px' }}>
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onToggleAiAssistant?.())}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={14} color="#38bdf8" />
+                <span>AI 도우미 열기 / 닫기</span>
+              </div>
+              <span style={shortcutStyle}>⌘/Ctrl+⇧+A</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onOpenAiAssistant?.('gemini'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={14} color="#38bdf8" />
+                <span>Google Gemini 열기</span>
+              </div>
+              <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 500 }}>웹인증</span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onOpenAiAssistant?.('chatgpt'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Zap size={14} color="#10b981" />
+                <span>ChatGPT (Codex) 열기</span>
+              </div>
+              <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 500 }}>웹인증</span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onOpenAiAssistant?.('claude'))}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Brain size={14} color="#d97706" />
+                <span>Anthropic Claude 열기</span>
+              </div>
+              <span style={{ fontSize: '10px', color: '#d97706', fontWeight: 500 }}>웹인증</span>
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onSnapAiAssistant?.())}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Columns size={14} />
+                <span>에디터 우측에 나란히 붙이기</span>
+              </div>
+              <span style={shortcutStyle}>Snap</span>
+            </div>
+
+            <div
+              style={dropdownItemStyle}
+              onClick={() => executeAction(() => onToggleAiAlwaysOnTop?.())}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Pin size={14} color={isAiAlwaysOnTop ? '#38bdf8' : undefined} />
+                <span>항상 위에 고정 {isAiAlwaysOnTop ? '(켜짐)' : '(꺼짐)'}</span>
+              </div>
+              {isAiAlwaysOnTop && <span style={{ color: '#38bdf8' }}>✓</span>}
+            </div>
+
+            <div style={separatorStyle} />
+
+            <div
+              style={{
+                ...dropdownItemStyle,
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              onClick={() => executeAction(() => onSmartInsertAiCode?.())}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ClipboardPaste size={14} color="#38bdf8" />
+                <span>AI 코드 스마트 삽입</span>
+              </div>
+              <span style={shortcutStyle}>⌥V / Alt+V</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. 설정 (Settings / Preferences) */}
       <div style={{ position: 'relative' }}>
         <button
           onClick={() => handleMenuClick('settings')}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TabItem } from '../types';
-import { Terminal, Cpu, Settings } from 'lucide-react';
+import { Terminal, Cpu, Settings, Sparkles } from 'lucide-react';
 
 interface StatusBarProps {
   activeTab?: TabItem;
@@ -10,6 +10,7 @@ interface StatusBarProps {
   onToggleEncoding: () => void;
   onToggleLineEnding: () => void;
   onOpenSettings: () => void;
+  onToggleAiAssistant?: () => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -20,6 +21,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   onToggleEncoding,
   onToggleLineEnding,
   onOpenSettings,
+  onToggleAiAssistant,
 }) => {
   const lineCount = activeTab ? activeTab.content.split('\n').length : 0;
   const charCount = activeTab ? activeTab.content.length : 0;
@@ -132,6 +134,30 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         <Terminal size={12} />
         <span>터미널</span>
       </button>
+
+      {/* AI Assistant Button */}
+      {onToggleAiAssistant && (
+        <button
+          onClick={onToggleAiAssistant}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            border: 'none',
+            background: isLight ? '#e0f2fe' : '#0369a133',
+            color: isLight ? '#0369a1' : '#38bdf8',
+            cursor: 'pointer',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontWeight: 600,
+            fontSize: '11px',
+          }}
+          title="AI 도우미 창 열기 / 닫기 (Gemini · ChatGPT · Claude) [⌘/Ctrl+⇧+A]"
+        >
+          <Sparkles size={12} color="#38bdf8" />
+          <span>AI 도우미</span>
+        </button>
+      )}
 
       {/* Settings Button */}
       <button
