@@ -18,6 +18,7 @@ import {
   Zap,
   Brain,
   ClipboardPaste,
+  LogOut,
 } from 'lucide-react';
 
 interface TopMenuBarProps {
@@ -29,6 +30,7 @@ interface TopMenuBarProps {
   onSaveFile: () => void;
   onSaveAsFile?: () => void;
   onCloseTab: () => void;
+  onQuitApp?: () => void;
   onToggleSidebar: () => void;
   onSplitRight: () => void;
   onSplitDown: () => void;
@@ -56,6 +58,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onSaveFile,
   onSaveAsFile,
   onCloseTab,
+  onQuitApp,
   onToggleSidebar,
   onSplitRight,
   onSplitDown,
@@ -273,6 +276,24 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               </div>
               <span style={shortcutStyle}>⌘W</span>
             </div>
+
+            {onQuitApp && (
+              <>
+                <div style={separatorStyle} />
+                <div
+                  style={dropdownItemStyle}
+                  onClick={() => executeAction(onQuitApp)}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#fef2f2' : 'rgba(239, 68, 68, 0.15)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <LogOut size={14} color={isLight ? '#dc2626' : '#f87171'} />
+                    <span style={{ color: isLight ? '#dc2626' : '#f87171', fontWeight: 500 }}>Geditor 종료</span>
+                  </div>
+                  <span style={shortcutStyle}>⌘Q</span>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -313,4 +313,9 @@ pub fn open_folder_dialog(default_dir: Option<String>) -> Option<String> {
     dialog.pick_folder().map(|p| p.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+pub fn exit_app(app_handle: tauri::AppHandle) {
+    app_handle.exit(0);
+}
+
 

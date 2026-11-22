@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl, openPath } from '@tauri-apps/plugin-opener';
 import { FileNode, FilePayload, SearchMatch, DEFAULT_BLOCKED_EXTENSIONS } from '../types';
 
@@ -150,6 +151,15 @@ export const tauriApi = {
   // Open URL or local HTML file in system default browser (Safari/Chrome/Edge)
   openInBrowser: async (pathOrUrl?: string, htmlContent?: string): Promise<void> => {
     return await invoke('open_in_browser', { pathOrUrl, htmlContent });
+  },
+
+  // Exit application cleanly
+  exitApp: async (): Promise<void> => {
+    try {
+      await invoke('exit_app');
+    } catch {
+      await getCurrentWindow().destroy();
+    }
   },
 };
 

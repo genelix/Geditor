@@ -36,7 +36,7 @@ pub fn run() {
                     &PredefinedMenuItem::hide_others(app, Some("기타 가리기"))?,
                     &PredefinedMenuItem::show_all(app, Some("모두 보기"))?,
                     &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::quit(app, Some("Geditor 종료"))?,
+                    &MenuItem::with_id(app, "quit_app", "Geditor 종료", true, Some("CmdOrCtrl+Q"))?,
                 ],
             )?;
 
@@ -52,6 +52,8 @@ pub fn run() {
                     &MenuItem::with_id(app, "save_as_file", "다른 이름으로 저장...", true, Some("CmdOrCtrl+Shift+S"))?,
                     &PredefinedMenuItem::separator(app)?,
                     &MenuItem::with_id(app, "close_tab", "탭 / 패널 닫기", true, Some("CmdOrCtrl+W"))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, "quit_app", "종료", true, Some("CmdOrCtrl+Q"))?,
                 ],
             )?;
 
@@ -175,6 +177,7 @@ pub fn run() {
             fs_cmd::save_file_dialog,
             fs_cmd::open_file_dialog,
             fs_cmd::open_folder_dialog,
+            fs_cmd::exit_app,
             search_cmd::search_in_files,
             pty_cmd::terminal_spawn,
             pty_cmd::terminal_write,

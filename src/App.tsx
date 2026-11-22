@@ -9,6 +9,7 @@ import { TabBar } from './components/TabBar';
 import { SplitContainer } from './components/SplitContainer';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
+import { UnsavedChangesModal } from './components/UnsavedChangesModal';
 import { AlertTriangle, X, Sparkles } from 'lucide-react';
 import { extractAiCode } from './utils/aiCodeParser';
 
@@ -192,6 +193,101 @@ export default function App() {
   ]);
   const [activePaneId, setActivePaneId] = useState<string>('pane-1');
   const [splitDirection, setSplitDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+
+  // Unsaved close confirmation state & handlers
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+  const [isSavingAndQuitting, setIsSavingAndQuitting] = useState(false);
+  const isForceClosingRef = useRef(false);
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  // Intercept window close request when files are unsaved
+  useEffect(() => {
+    let isMounted = true;
+    let unlistenFn: (() => void) | null = null;
+
+    const setupCloseListener = async () => {
+      try {
+        const unlisten = await getCurrentWindow().onCloseRequested(async (event) => {
+          if (isForceClosingRef.current) {
+            return;
+          }
+          const dirty = tabsRef.current.filter((t) => t.isDirty);
+          if (dirty.length > 0) {
+            event.preventDefault();
+            setIsCloseModalOpen(true);
+          }
+        });
+        if (isMounted) {
+          unlistenFn = unlisten;
+        } else {
+          unlisten();
+        }
+      } catch (err) {
+        console.error('Failed to register onCloseRequested listener:', err);
+      }
+    };
+
+    setupCloseListener();
+
+    return () => {
+      isMounted = false;
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
+
+  const handleRequestQuit = useCallback(() => {
+    const dirty = tabsRef.current.filter((t) => t.isDirty);
+    if (dirty.length > 0) {
+      setIsCloseModalOpen(true);
+    } else {
+      isForceClosingRef.current = true;
+      tauriApi.exitApp().catch(() => getCurrentWindow().destroy());
+    }
+  }, []);
+
+  const handleCancelClose = useCallback(() => {
+    setIsCloseModalOpen(false);
+  }, []);
+
+  const handleDiscardAndQuit = useCallback(async () => {
+    isForceClosingRef.current = true;
+    setIsCloseModalOpen(false);
+    try {
+      await tauriApi.exitApp();
+    } catch {
+      await getCurrentWindow().destroy();
+    }
+  }, []);
+
+  const handleSaveAndQuit = useCallback(async () => {
+    setIsSavingAndQuitting(true);
+    try {
+      const dirty = tabsRef.current.filter((t) => t.isDirty);
+      for (const tab of dirty) {
+        let targetPath = tab.path;
+        if (!targetPath) {
+          const chosen = await tauriApi.saveFileDialog(tab.name, workspacePath);
+          if (!chosen) {
+            // Cancelled by user during save dialog; abort quitting
+            setIsSavingAndQuitting(false);
+            return;
+          }
+          targetPath = chosen;
+        }
+        await tauriApi.writeFile(targetPath, tab.content, tab.encoding);
+      }
+      isForceClosingRef.current = true;
+      setIsCloseModalOpen(false);
+      await tauriApi.exitApp();
+    } catch (err) {
+      console.error('Failed to save files on exit:', err);
+      alert('파일 저장 중 오류가 발생했습니다: ' + String(err));
+      setIsSavingAndQuitting(false);
+    }
+  }, [workspacePath]);
 
   // Load workspace files on start
   const refreshWorkspace = useCallback(async (path?: string) => {
@@ -908,13 +1004,15 @@ export default function App() {
             '• Cmd+T: 내장 터미널 열기\n' +
             '• Cmd+,: 환경설정 열기'
         );
+      } else if (id === 'quit_app') {
+        handleRequestQuit();
       }
     });
 
     return () => {
       unlistenPromise.then((f) => f());
     };
-  }, [activeTabId, activePaneId, tabs, panes, settings, handleToggleAiAssistant, handleOpenAiAssistant, handleSnapAiAssistant, handleToggleAiAlwaysOnTop, handleSmartInsertAiCode, handleAskAiWithSelection]);
+  }, [activeTabId, activePaneId, tabs, panes, settings, handleToggleAiAssistant, handleOpenAiAssistant, handleSnapAiAssistant, handleToggleAiAlwaysOnTop, handleSmartInsertAiCode, handleAskAiWithSelection, handleRequestQuit]);
 
   // Handle window dragging & double-click maximize
   const handleTitleBarMouseDown = async (e: React.MouseEvent) => {
@@ -996,6 +1094,7 @@ export default function App() {
             handleCloseTab(activeTabId);
           }
         }}
+        onQuitApp={handleRequestQuit}
         onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
         onSplitRight={() => handleSplitPane(activePaneId, 'horizontal')}
         onSplitDown={() => handleSplitPane(activePaneId, 'vertical')}
@@ -1226,6 +1325,17 @@ export default function App() {
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Unsaved Changes Confirmation Modal on Exit */}
+      <UnsavedChangesModal
+        isOpen={isCloseModalOpen}
+        dirtyTabs={tabs.filter((t) => t.isDirty)}
+        theme={settings.theme}
+        isSaving={isSavingAndQuitting}
+        onSaveAndQuit={handleSaveAndQuit}
+        onDiscardAndQuit={handleDiscardAndQuit}
+        onCancel={handleCancelClose}
       />
 
       {/* Floating Warning/Info Toast */}
