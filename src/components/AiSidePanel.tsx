@@ -216,6 +216,10 @@ export const AiSidePanel: React.FC<AiSidePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
             {/* "선택영역 본문붙혀넣기" 버튼 */}
             <button
+              onMouseDown={(e) => {
+                // 버튼 클릭 시 웹뷰의 포커스 이탈 및 텍스트 선택 해제 방지
+                e.preventDefault();
+              }}
               onClick={onPasteSelectedToEditor}
               style={{
                 display: 'flex',

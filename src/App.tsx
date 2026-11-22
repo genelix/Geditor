@@ -946,6 +946,7 @@ export default function App() {
       }
 
       window.dispatchEvent(new CustomEvent('geditor-insert-text', { detail: { text } }));
+      showToast('📋 AI 선택 내용을 본문에 붙여넣었습니다.');
     } catch (err) {
       console.error('Failed to paste AI selection:', err);
       showToast(`본문 붙여넣기 실패: ${err}`);

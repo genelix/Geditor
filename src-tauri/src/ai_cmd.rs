@@ -55,6 +55,63 @@ fn compute_snap_position_and_size(app: &AppHandle) -> Result<(PhysicalPosition<i
     Ok((PhysicalPosition::new(target_x, target_y), PhysicalSize::new(target_w, target_h)))
 }
 
+pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
+(function() {
+    if (window.__geditor_tracker_installed) return;
+    window.__geditor_tracker_installed = true;
+    window.__geditor_last_selected_text = "";
+
+    function getAnySelection() {
+        try {
+            // 1. Standard window selection
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                const s = sel.toString();
+                if (s && s.trim().length > 0) return s;
+            }
+
+            // 2. Active input / textarea
+            const act = document.activeElement;
+            if (act && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) {
+                const s = act.value.substring(act.selectionStart, act.selectionEnd);
+                if (s && s.trim().length > 0) return s;
+            }
+
+            // 3. Shadow DOM / Web Components (Gemini, Lit, etc.)
+            let curr = act;
+            while (curr && curr.shadowRoot) {
+                const shadowSel = curr.shadowRoot.getSelection ? curr.shadowRoot.getSelection() : null;
+                if (shadowSel) {
+                    const s = shadowSel.toString();
+                    if (s && s.trim().length > 0) return s;
+                }
+                curr = curr.shadowRoot.activeElement;
+            }
+        } catch(e) {}
+        return "";
+    }
+
+    function recordSelection() {
+        try {
+            const text = getAnySelection();
+            if (text && text.trim().length > 0) {
+                window.__geditor_last_selected_text = text;
+            }
+        } catch(e) {}
+    }
+
+    // Capture selections continuously on user interactions
+    document.addEventListener('selectionchange', recordSelection, true);
+    window.addEventListener('mouseup', recordSelection, true);
+    window.addEventListener('keyup', recordSelection, true);
+    window.addEventListener('touchend', recordSelection, true);
+    window.addEventListener('copy', recordSelection, true);
+
+    // Continuous interval check to capture drag selections before blur
+    setInterval(recordSelection, 250);
+})();
+"#;
+
 /// Show or create AI Side Panel as child webview on main window
 #[tauri::command]
 pub async fn show_ai_panel(
@@ -86,11 +143,13 @@ pub async fn show_ai_panel(
                 let _ = webview.navigate(target_url);
             }
         }
+        let _ = webview.eval(AI_SELECTION_TRACKER_SCRIPT);
     } else {
         let builder = WebviewBuilder::new(
             "ai-panel",
             WebviewUrl::External(target_url),
-        );
+        )
+        .initialization_script(AI_SELECTION_TRACKER_SCRIPT);
         main_win.add_child(builder, pos, size).map_err(|e| e.to_string())?;
     }
 
@@ -141,11 +200,12 @@ pub async fn get_ai_selected_text(app: AppHandle) -> Result<String, String> {
     let script = r#"
         (function() {
             try {
-                // 1. Check window selection
+                // 1. Check live window selection first
                 const sel = window.getSelection();
                 if (sel && sel.rangeCount > 0) {
                     const text = sel.toString();
                     if (text && text.trim().length > 0) {
+                        window.__geditor_last_selected_text = text;
                         return text;
                     }
                 }
@@ -154,20 +214,53 @@ pub async fn get_ai_selected_text(app: AppHandle) -> Result<String, String> {
                 const act = document.activeElement;
                 if (act && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) {
                     const s = act.value.substring(act.selectionStart, act.selectionEnd);
-                    if (s && s.trim().length > 0) return s;
+                    if (s && s.trim().length > 0) {
+                        window.__geditor_last_selected_text = s;
+                        return s;
+                    }
                 }
 
-                // 3. Fallback: check if any code block exists
-                const codes = document.querySelectorAll('pre code, .markdown pre code, pre');
-                if (codes.length > 0) {
-                    const lastCode = codes[codes.length - 1];
-                    const ct = lastCode.innerText || lastCode.textContent || "";
-                    if (ct && ct.trim().length > 0) return ct;
+                // 3. Check previously tracked selection (survives blur & window focus shifts!)
+                if (window.__geditor_last_selected_text && window.__geditor_last_selected_text.trim().length > 0) {
+                    const saved = window.__geditor_last_selected_text;
+                    return saved;
+                }
+
+                // 4. Check shadow DOM active element
+                let curr = act;
+                while (curr && curr.shadowRoot) {
+                    const shadowSel = curr.shadowRoot.getSelection ? curr.shadowRoot.getSelection() : null;
+                    if (shadowSel) {
+                        const s = shadowSel.toString();
+                        if (s && s.trim().length > 0) {
+                            window.__geditor_last_selected_text = s;
+                            return s;
+                        }
+                    }
+                    curr = curr.shadowRoot.activeElement;
+                }
+
+                // 5. Fallback: check if any code block exists in AI response
+                const codeSelectors = [
+                    'pre code',
+                    'code-block pre',
+                    '.markdown pre code',
+                    'pre',
+                    '[data-message-author-role="assistant"] pre',
+                    '.response-container pre'
+                ];
+                for (const selStr of codeSelectors) {
+                    const codes = document.querySelectorAll(selStr);
+                    if (codes.length > 0) {
+                        const lastCode = codes[codes.length - 1];
+                        const ct = lastCode.innerText || lastCode.textContent || "";
+                        if (ct && ct.trim().length > 0) return ct;
+                    }
                 }
 
                 return "";
             } catch (e) {
-                return "";
+                return window.__geditor_last_selected_text || "";
             }
         })()
     "#;
@@ -206,8 +299,10 @@ pub async fn navigate_ai_panel(app: AppHandle, url: String) -> Result<(), String
     let parsed_url = Url::parse(&url).map_err(|e| e.to_string())?;
     if let Some(panel) = app.get_webview("ai-panel") {
         let _ = panel.navigate(parsed_url);
+        let _ = panel.eval(AI_SELECTION_TRACKER_SCRIPT);
     } else if let Some(ai_win) = app.get_webview_window("ai-assistant") {
         let _ = ai_win.navigate(parsed_url);
+        let _ = ai_win.eval(AI_SELECTION_TRACKER_SCRIPT);
     }
     Ok(())
 }
@@ -228,6 +323,7 @@ pub async fn open_ai_assistant(
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         let _ = window.navigate(url);
+        let _ = window.eval(AI_SELECTION_TRACKER_SCRIPT);
 
         if snap.unwrap_or(false) {
             let _ = snap_ai_assistant(app).await;
@@ -245,7 +341,8 @@ pub async fn open_ai_assistant(
         .title(&win_title)
         .position(pos.x as f64, pos.y as f64)
         .inner_size(size.width as f64, size.height as f64)
-        .min_inner_size(380.0, 450.0);
+        .min_inner_size(380.0, 450.0)
+        .initialization_script(AI_SELECTION_TRACKER_SCRIPT);
 
         let window = builder.build().map_err(|e| e.to_string())?;
 
