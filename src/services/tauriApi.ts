@@ -124,6 +124,28 @@ export const tauriApi = {
   setAiAssistantAlwaysOnTop: async (alwaysOnTop: boolean): Promise<void> => {
     return await invoke('set_ai_assistant_always_on_top', { alwaysOnTop });
   },
+
+  // Native Native Clipboard (bypasses browser permissions & WebKit Paste tooltip popups)
+  readClipboard: async (): Promise<string> => {
+    try {
+      return await invoke<string>('read_clipboard_text');
+    } catch {
+      return await navigator.clipboard.readText().catch(() => '');
+    }
+  },
+
+  writeClipboard: async (text: string): Promise<void> => {
+    try {
+      await invoke('write_clipboard_text', { text });
+    } catch {
+      await navigator.clipboard.writeText(text).catch(() => {});
+    }
+  },
+
+  // Open URL or local HTML file in system default browser (Safari/Chrome/Edge)
+  openInBrowser: async (pathOrUrl?: string, htmlContent?: string): Promise<void> => {
+    return await invoke('open_in_browser', { pathOrUrl, htmlContent });
+  },
 };
 
 export function detectLanguage(filename: string): string {

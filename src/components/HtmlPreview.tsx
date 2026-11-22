@@ -10,7 +10,6 @@ import {
   Globe,
   Loader2,
 } from 'lucide-react';
-import { openPath } from '@tauri-apps/plugin-opener';
 import { tauriApi } from '../services/tauriApi';
 
 interface HtmlPreviewProps {
@@ -160,12 +159,8 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
   }, [content, filePath, reloadKey]);
 
   const handleOpenInBrowser = async () => {
-    if (!filePath) {
-      alert('파일을 먼저 저장해야 기본 브라우저에서 열 수 있습니다.');
-      return;
-    }
     try {
-      await openPath(filePath);
+      await tauriApi.openInBrowser(filePath, preparedHtml || content);
     } catch (e) {
       alert(`외부 브라우저 열기 실패: ${e}`);
     }
@@ -327,28 +322,26 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({
         <div style={{ flex: 1 }} />
 
         {/* Open in external browser */}
-        {filePath && (
-          <button
-            onClick={handleOpenInBrowser}
-            title="기본 웹 브라우저(Safari/Chrome)에서 원본 전체화면으로 열기"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '3px',
-              border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
-              cursor: 'pointer',
-              backgroundColor: isLight ? '#ffffff' : '#27272a',
-              color: isLight ? '#18181b' : '#f4f4f5',
-              fontSize: '11px',
-              fontWeight: 500,
-            }}
-          >
-            <ExternalLink size={12} />
-            브라우저로 열기
-          </button>
-        )}
+        <button
+          onClick={handleOpenInBrowser}
+          title="기본 웹 브라우저(Safari/Chrome/Edge)에서 원본 전체화면으로 열기"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '3px',
+            border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+            cursor: 'pointer',
+            backgroundColor: isLight ? '#ffffff' : '#27272a',
+            color: isLight ? '#18181b' : '#f4f4f5',
+            fontSize: '11px',
+            fontWeight: 500,
+          }}
+        >
+          <ExternalLink size={12} />
+          브라우저로 열기
+        </button>
       </div>
 
       {/* Preview Viewport Frame */}

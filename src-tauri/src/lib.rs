@@ -2,6 +2,7 @@ mod fs_cmd;
 mod pty_cmd;
 mod search_cmd;
 mod ai_cmd;
+mod clipboard_cmd;
 
 use pty_cmd::PtyState;
 use std::collections::HashMap;
@@ -182,6 +183,9 @@ pub fn run() {
             ai_cmd::toggle_ai_assistant,
             ai_cmd::snap_ai_assistant,
             ai_cmd::set_ai_assistant_always_on_top,
+            clipboard_cmd::read_clipboard_text,
+            clipboard_cmd::write_clipboard_text,
+            clipboard_cmd::open_in_browser,
         ])
         .run(tauri::generate_context!())
         .expect("error while running geditor application");

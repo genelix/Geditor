@@ -53,13 +53,13 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // Detect AI Code from clipboard on focus (e.g. returning from AI browser window)
+  // Detect AI Code from native clipboard when returning to Geditor window from other apps
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const checkClipboardOnFocus = async () => {
       try {
-        const text = await navigator.clipboard.readText();
+        const text = await tauriApi.readClipboard();
         if (!text || !text.trim() || text === lastClipboardTextRef.current) {
           return;
         }
@@ -85,13 +85,19 @@ export default function App() {
           }, 8000);
         }
       } catch (e) {
-        // Clipboard read permission might not be granted
+        // Native clipboard read failure fallback
       }
     };
 
-    window.addEventListener('focus', checkClipboardOnFocus);
+    // Use Tauri OS-level window focus event so that internal button clicks or iframe focus don't trigger it
+    const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) {
+        checkClipboardOnFocus();
+      }
+    });
+
     return () => {
-      window.removeEventListener('focus', checkClipboardOnFocus);
+      unlistenPromise.then((unlisten) => unlisten());
       if (timer) clearTimeout(timer);
     };
   }, []);

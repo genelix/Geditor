@@ -6,7 +6,7 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { CsvTablePreview } from './CsvTablePreview';
 import { HtmlPreview } from './HtmlPreview';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
-import { extractLinkOrPathAt, openLinkOrPath } from '../services/tauriApi';
+import { extractLinkOrPathAt, openLinkOrPath, tauriApi } from '../services/tauriApi';
 import {
   Code2,
   Eye,
@@ -97,7 +97,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     editor.focus();
 
     try {
-      const clipText = await navigator.clipboard.readText();
+      const clipText = await tauriApi.readClipboard();
       if (!clipText || !clipText.trim()) {
         showToast?.('클립보드가 비어 있습니다.');
         return;
@@ -150,7 +150,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     const selectedCode = model.getValueInRange(sel);
     const prompt = generateAiPrompt(selectedCode, tab.language, intent);
     try {
-      await navigator.clipboard.writeText(prompt);
+      await tauriApi.writeClipboard(prompt);
       showToast?.('💡 선택한 코드의 AI 질문 템플릿이 복사되었습니다. AI 도우미 창에 붙여넣으세요!');
     } catch (err) {
       console.error('Failed to copy prompt:', err);
@@ -296,7 +296,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         if (sel && !sel.isEmpty()) {
           const text = editor.getModel()?.getValueInRange(sel) || '';
           try {
-            await navigator.clipboard.writeText(text);
+            await tauriApi.writeClipboard(text);
             editor.executeEdits('cut', [{ range: sel, text: '', forceMoveMarkers: true }]);
           } catch {
             document.execCommand('cut');
@@ -317,7 +317,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         if (sel && !sel.isEmpty()) {
           const text = editor.getModel()?.getValueInRange(sel) || '';
           try {
-            await navigator.clipboard.writeText(text);
+            await tauriApi.writeClipboard(text);
           } catch {
             document.execCommand('copy');
           }
@@ -333,7 +333,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         if (!editor) return;
         editor.focus();
         try {
-          const text = await navigator.clipboard.readText();
+          const text = await tauriApi.readClipboard();
           const sel = editor.getSelection();
           if (sel) {
             editor.executeEdits('paste', [{ range: sel, text, forceMoveMarkers: true }]);
