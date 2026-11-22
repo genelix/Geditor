@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geditor(지에디터) 초보자 가이드 & 완전 정복 매뉴얼</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --mac-color: #ec4899;
+      --win-color: #3b82f6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --border: #334155;
+      --kbd-bg: #1e293b;
+      --kbd-border: #475569;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      line-height: 1.65;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      width: 280px;
+      background-color: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 24px 16px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: #fff;
+    }
+
+    .brand-text h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .brand-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin: 18px 8px 8px;
+    }
+
+    .nav-list {
+      list-style: none;
+    }
+
+    .nav-item a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .nav-item a:hover {
+      background-color: var(--bg-tertiary);
+      color: var(--text-main);
+    }
+
+    .nav-item a.active {
+      background-color: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Main Content */
+    .main-container {
+      flex: 1;
+      max-width: 980px;
+      padding: 40px 48px;
+      margin: 0 auto;
+    }
+
+    /* Header & Filter Controls */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .title-area h2 {
+      font-size: 28px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .title-area p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .os-switch-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px;
+      display: flex;
+      gap: 4px;
+    }
+
+    .os-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .os-btn:hover {
+      color: var(--text-main);
+    }
+
+    .os-btn.active {
+      background: var(--accent);
+      color: #0f172a;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Section Styling */
+    section {
+      margin-bottom: 56px;
+      scroll-margin-top: 30px;
+    }
+
+    h3.section-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-left: 4px solid var(--accent);
+      padding-left: 12px;
+    }
+
+    p.lead {
+      font-size: 15px;
+      color: #cbd5e1;
+      margin-bottom: 20px;
+    }
+
+    /* Cards & Grids */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .card {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .card h4 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Keyboard Badges `<kbd>` */
+    kbd {
+      background-color: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      color: #38bdf8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      box-shadow: 0 2px 0 var(--kbd-border);
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    /* OS Badges */
+    .os-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      letter-spacing: 0.02em;
+    }
+
+    .os-badge.mac {
+      background: rgba(236, 72, 153, 0.15);
+      color: var(--mac-color);
+      border: 1px solid rgba(236, 72, 153, 0.3);
+    }
+
+    .os-badge.win {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--win-color);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    /* Comparison Box (Mac vs Win) */
+    .compare-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .compare-box {
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+    }
+
+    .compare-box.mac-box {
+      background: rgba(236, 72, 153, 0.06);
+      border: 1px solid rgba(236, 72, 153, 0.25);
+    }
+
+    .compare-box.win-box {
+      background: rgba(59, 130, 246, 0.06);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+
+    .compare-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mac-box .compare-title { color: var(--mac-color); }
+    .win-box .compare-title { color: var(--win-color); }
+
+    /* Tables */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13px;
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    table.data-table th,
+    table.data-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    table.data-table th {
+      background-color: var(--bg-tertiary);
+      font-weight: 600;
+      color: #fff;
+    }
+
+    table.data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.data-table tr:hover td {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Callout Alert Boxes */
+    .callout {
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 13px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      line-height: 1.5;
+    }
+
+    .callout.info {
+      background-color: rgba(56, 189, 248, 0.1);
+      border-left: 4px solid var(--accent);
+      color: #e0f2fe;
+    }
+
+    .callout.tip {
+      background-color: rgba(16, 185, 129, 0.1);
+      border-left: 4px solid var(--success);
+      color: #d1fae5;
+    }
+
+    .callout.warn {
+      background-color: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--warning);
+      color: #fef3c7;
+    }
+
+    /* Step Badge */
+    .step-list {
+      list-style: none;
+      counter-reset: step-counter;
+      margin: 16px 0;
+    }
+
+    .step-item {
+      position: relative;
+      padding-left: 38px;
+      margin-bottom: 20px;
+    }
+
+    .step-item::before {
+      counter-increment: step-counter;
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      background: var(--accent);
+      color: #0f172a;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-item h5 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .step-item p {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    /* UI Layout Diagram Preview */
+    .ui-diagram {
+      background-color: #141418;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 16px 0;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    .ui-diagram-title {
+      color: #a1a1aa;
+      font-size: 11px;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+
+    .ui-mock-window {
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #18181b;
+    }
+
+    .ui-mock-topbar {
+      background: #27272a;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-bottom: 1px solid #3f3f46;
+      font-size: 11px;
+      color: #d4d4d8;
+    }
+
+    .ui-mock-body {
+      display: flex;
+      height: 120px;
+    }
+
+    .ui-mock-sidebar {
+      width: 25%;
+      border-right: 1px solid #3f3f46;
+      background: #1c1c20;
+      padding: 8px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+
+    .ui-mock-editor {
+      flex: 1;
+      padding: 8px 12px;
+      color: #38bdf8;
+      font-size: 11px;
+    }
+
+    .ui-mock-statusbar {
+      background: #0284c7;
+      color: #fff;
+      padding: 4px 10px;
+      font-size: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Hidden/Filter Helpers */
+    .hide-mac .mac-only,
+    .hide-mac .mac-box {
+      display: none !important;
+    }
+
+    .hide-win .win-only,
+    .hide-win .win-box {
+      display: none !important;
+    }
+
+    .hide-mac .compare-container,
+    .hide-win .compare-container {
+      grid-template-columns: 1fr;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 30px 0;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 60px;
+    }
+
+    @media (max-width: 860px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; height: auto; position: static; }
+      .main-container { padding: 24px 16px; }
+      .compare-container { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar Table of Contents -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">G</div>
+      <div class="brand-text">
+        <h1>Geditor 매뉴얼</h1>
+        <p>Rust 초고속 텍스트 에디터</p>
+      </div>
+    </div>
+
+    <div class="nav-group-title">기본 가이드</div>
+    <ul class="nav-list">
+      <li class="nav-item"><a href="#intro" class="active">🌟 1. 소개 및 화면 구성</a></li>
+      <li class="nav-item"><a href="#file-ops">📂 2. 파일 & 탐색기 관리</a></li>
+      <li class="nav-item"><a href="#panes">🪟 3. 화면 분할 & 미리보기</a></li>
+    </ul>
+
+    <div class="nav-group-title">핵심 & 고급 기능</div>
+    <ul class="nav-list">
+      <li class="nav-item"><a href="#ai-assistant">🤖 4. AI 도우미 200% 활용</a></li>
+      <li class="nav-item"><a href="#encoding">🔤 5. 한글 깨짐(인코딩) 해결</a></li>
+      <li class="nav-item"><a href="#settings">⚙️ 6. 환경설정 맞춤 설정</a></li>
+      <li class="nav-item"><a href="#safe-exit">🛡️ 7. 작업 보호 & 안전 종료</a></li>
+    </ul>
+
+    <div class="nav-group-title">단축키 레퍼런스</div>
+    <ul class="nav-list">
+      <li class="nav-item"><a href="#shortcuts">⌨️ 8. 단축키 총정리 (Mac / Win)</a></li>
+    </ul>
+  </aside>
+
+  <!-- Main Manual Content -->
+  <main class="main-container" id="manual-root">
+
+    <!-- Header & OS Filter Switcher -->
+    <header class="header-bar">
+      <div class="title-area">
+        <h2>Geditor 초보자 사용 설명서</h2>
+        <p>가볍고 강력한 Geditor의 모든 기능을 맥(Mac)과 윈도우(Windows) 환경에 맞춰 쉽게 배워보세요.</p>
+      </div>
+      <div class="os-switch-box">
+        <button class="os-btn active" onclick="setOSFilter('all', this)">🖥️ 전체 보기</button>
+        <button class="os-btn" onclick="setOSFilter('mac', this)">🍎 Mac 전용</button>
+        <button class="os-btn" onclick="setOSFilter('win', this)">🪟 Windows 전용</button>
+      </div>
+    </header>
+
+    <!-- Section 1: Intro & Layout -->
+    <section id="intro">
+      <h3 class="section-title">🌟 1. Geditor 소개 및 화면 구성</h3>
+      <p class="lead">
+        <strong>Geditor(지에디터)</strong>는 Rust 기반의 네이티브 코어로 개발되어 실행 속도가 매우 빠르고, 시스템 자원을 적게 차지하는 현대적인 텍스트 에디터입니다. 대용량 텍스트 파일도 버벅임 없이 빠르게 열고 편집할 수 있습니다.
+      </p>
+
+      <div class="ui-diagram">
+        <div class="ui-diagram-title">💡 Geditor의 주요 화면 영역 한눈에 보기</div>
+        <div class="ui-mock-window">
+          <div class="ui-mock-topbar">
+            <span style="color:#38bdf8; font-weight:bold;">Geditor — Welcome.md</span>
+            <span style="margin-left:auto; color:#a1a1aa;">파일 | 편집 | 보기 | AI 도우미 | 설정 | 창 | 도움말</span>
+          </div>
+          <div class="ui-mock-body">
+            <div class="ui-mock-sidebar">
+              📁 탐색기 (좌측 사이드바)<br>
+              ⭐ 즐겨찾기 폴더<br>
+              📄 index.html<br>
+              📄 script.py
+            </div>
+            <div class="ui-mock-editor">
+              📝 Monaco 중앙 편집 영역 (에디터)<br>
+              - 문법 하이라이팅<br>
+              - 실시간 자동 완성<br>
+              - 화면 좌우 분할
+            </div>
+          </div>
+          <div class="ui-mock-statusbar">
+            <span>READY | UTF-8 | LF | Markdown</span>
+            <span>💡 Cmd+S 저장 | Cmd+N 새 파일 | Cmd+B 탐색기</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h4>1. 상단 메뉴 바 (TopMenuBar)</h4>
+          <p>파일, 편집, 보기, AI 도우미, 설정 등 에디터의 모든 기능을 마우스 클릭으로 간편하게 실행할 수 있습니다.</p>
+        </div>
+        <div class="card">
+          <h4>2. 좌측 탐색기 (Sidebar)</h4>
+          <p>현재 열린 프로젝트의 파일 트리를 보여줍니다. 자주 쓰는 폴더를 '즐겨찾기'에 등록해 1초 만에 이동할 수 있습니다.</p>
+        </div>
+        <div class="card">
+          <h4>3. 중앙 편집 영역 (Editor)</h4>
+          <p>VS Code와 동일한 강력한 Monaco Editor 엔진이 탑재되어 자동 완성, 코드 서식, 다중 커서를 완벽하게 지원합니다.</p>
+        </div>
+        <div class="card">
+          <h4>4. 하단 상태 표시줄 (StatusBar)</h4>
+          <p>현재 파일의 한글 인코딩(UTF-8 / EUC-KR), 줄바꿈(LF / CRLF), 언어 모드 및 커서 위치를 실시간으로 확인하고 클릭하여 변경할 수 있습니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: File Operations -->
+    <section id="file-ops">
+      <h3 class="section-title">📂 2. 파일 & 탐색기 관리</h3>
+      <p class="lead">파일을 생성하고 저장하거나 원하는 폴더를 열고 관리하는 방법입니다.</p>
+
+      <div class="compare-container">
+        <!-- Mac Box -->
+        <div class="compare-box mac-box">
+          <div class="compare-title">🍎 Mac 사용자 메뉴 & 단축키</div>
+          <ul style="padding-left:18px; line-height:1.7;">
+            <li><strong>새 파일 만들기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>N</kbd></li>
+            <li><strong>파일 열기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>파일 열기...</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></li>
+            <li><strong>폴더 열기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>폴더 열기...</code> 또는 <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></li>
+            <li><strong>저장하기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>저장</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>S</kbd></li>
+            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>⌘ Cmd</kbd> + <kbd>B</kbd></li>
+          </ul>
+        </div>
+        <!-- Win Box -->
+        <div class="compare-box win-box">
+          <div class="compare-title">🪟 Windows 사용자 메뉴 & 단축키</div>
+          <ul style="padding-left:18px; line-height:1.7;">
+            <li><strong>새 파일 만들기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>Ctrl</kbd> + <kbd>N</kbd></li>
+            <li><strong>파일 열기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>파일 열기...</code> 또는 <kbd>Ctrl</kbd> + <kbd>O</kbd></li>
+            <li><strong>폴더 열기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>폴더 열기...</code> 또는 <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>O</kbd></li>
+            <li><strong>저장하기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>저장</code> 또는 <kbd>Ctrl</kbd> + <kbd>S</kbd></li>
+            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>Ctrl</kbd> + <kbd>B</kbd></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <span>💡</span>
+        <div>
+          <strong>폴더 즐겨찾기(Favorites) 기능</strong><br>
+          좌측 탐색기 상단의 <strong>⭐ 즐겨찾기</strong> 영역 옆의 <code>+</code> 버튼을 누르면 원하는 폴더를 바로 등록할 수 있습니다. 등록된 폴더를 클릭하면 전체 폴더 트리가 유지되면서 해당 위치로 즉시 스크롤 이동합니다.
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Panes & Preview -->
+    <section id="panes">
+      <h3 class="section-title">🪟 3. 화면 분할 & 실시간 미리보기</h3>
+      <p class="lead">한 화면에서 코드를 작성하면서 결과 화면이나 터미널을 나란히 띄워두고 작업할 수 있습니다.</p>
+
+      <ul class="step-list">
+        <li class="step-item">
+          <h5>화면 우측 분할 (Split Panes)</h5>
+          <p>
+            현재 열려 있는 편집 화면을 우측으로 반분할하여 두 파일을 동시에 비교하며 편집할 수 있습니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⌘ Cmd</kbd> + <kbd>\</kbd> &nbsp;|&nbsp;
+            <span class="os-badge win">🪟 Windows</span> <kbd>Ctrl</kbd> + <kbd>\</kbd>
+          </p>
+        </li>
+        <li class="step-item">
+          <h5>마크다운 실시간 나란히 보기 (Dual View)</h5>
+          <p>
+            마크다운(<code>.md</code>) 문서를 작성할 때 우측에 예쁘게 렌더링된 결과를 실시간으로 확인합니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>V</kbd> &nbsp;|&nbsp;
+            <span class="os-badge win">🪟 Windows</span> <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd>
+          </p>
+        </li>
+        <li class="step-item">
+          <h5>웹 페이지 HTML 미리보기 & 기본 브라우저 열기</h5>
+          <p>
+            <code>.html</code> 파일을 열면 상단에 <strong>[웹페이지 렌더링]</strong> 탭이 생성되어 브라우저처럼 디자인을 바로 볼 수 있습니다. 또한 상단의 <strong>[브라우저로 열기]</strong> 버튼을 누르면 내 컴퓨터의 기본 브라우저(Safari, Chrome, Edge)에서 즉시 열립니다.
+          </p>
+        </li>
+        <li class="step-item">
+          <h5>내장 네이티브 터미널 (Terminal) 열기</h5>
+          <p>
+            별도의 터미널 프로그램을 실행하지 않아도 에디터 하단에 즉시 네이티브 셸이 열립니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> macOS <code>zsh</code> 터미널 (<kbd>⌘ Cmd</kbd> + <kbd>T</kbd>)<br>
+            <span class="os-badge win">🪟 Windows</span> 윈도우 <code>cmd.exe / PowerShell</code> 터미널 (<kbd>Ctrl</kbd> + <kbd>T</kbd>)
+          </p>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Section 4: AI Assistant -->
+    <section id="ai-assistant">
+      <h3 class="section-title">🤖 4. 스마트 인공지능(AI) 도우미 200% 활용법</h3>
+      <p class="lead">
+        회사나 보안 환경에서 유료 API 키가 없어도 걱정 없습니다! Geditor는 별도의 API 발급 없이 브라우저 웹 로그인(Google Gemini, ChatGPT, Claude) 방식을 지원하여 자유롭게 질문하고 코드를 자동으로 붙여넣을 수 있습니다.
+      </p>
+
+      <div class="card-grid">
+        <div class="card">
+          <h4>1. AI 도우미 창 열기/토글</h4>
+          <p>
+            상단 메뉴 <code>AI 도우미</code> 또는 단축키를 눌러 AI 보조 창을 언제든 열고 닫을 수 있습니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>A</kbd><br>
+            <span class="os-badge win">🪟 Windows</span> <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>A</kbd>
+          </p>
+        </div>
+        <div class="card">
+          <h4>2. 선택 영역으로 AI에 질문하기</h4>
+          <p>
+            궁금한 코드나 텍스트를 마우스로 드래그한 후 단축키를 누르면 AI 창이 열리며 질문 입력창에 코드가 자동 입력됩니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⌥ Option</kbd> + <kbd>A</kbd><br>
+            <span class="os-badge win">🪟 Windows</span> <kbd>Alt</kbd> + <kbd>A</kbd>
+          </p>
+        </div>
+        <div class="card">
+          <h4>3. AI 코드 스마트 삽입 (Smart Insert)</h4>
+          <p>
+            AI가 답변한 코드 중 필요한 부분을 복사한 후 단축키를 누르면 불필요한 마크다운 백틱(```)을 자동으로 제거하고 현재 커서 위치의 들여쓰기에 맞추어 깔끔하게 붙여넣어 줍니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⌥ Option</kbd> + <kbd>V</kbd><br>
+            <span class="os-badge win">🪟 Windows</span> <kbd>Alt</kbd> + <kbd>V</kbd>
+          </p>
+        </div>
+        <div class="card">
+          <h4>4. 에디터 우측 나란히 붙이기 (Snap)</h4>
+          <p>
+            AI 창 상단의 <strong>[우측 스냅]</strong> 버튼 또는 메뉴를 누르면 에디터 창의 오른쪽 옆에 딱 맞추어 나란히 도킹됩니다.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout info">
+        <span>🔒</span>
+        <div>
+          <strong>안전한 기업용 SSO 웹 세션 유지</strong><br>
+          Geditor의 AI 도우미 창은 OS 네이티브 독립 웹뷰(macOS: WKWebView, Windows: WebView2)를 사용하여 구글, 마이크로소프트 회사 계정 로그인이 안전하게 보관되므로 매번 로그인할 필요가 없습니다.
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Encoding & Line Endings -->
+    <section id="encoding">
+      <h3 class="section-title">🔤 5. 한글 깨짐(인코딩) 및 줄바꿈 해결</h3>
+      <p class="lead">
+        오래된 메모장 파일이나 관공서 문서, 전산 시스템 텍스트를 열었을 때 한글이 <code></code>처럼 깨져 보이나요? Geditor에서는 단 한 번의 클릭으로 해결됩니다.
+      </p>
+
+      <div class="card-grid">
+        <div class="card">
+          <h4>한글 인코딩 변환 (UTF-8 ↔ EUC-KR)</h4>
+          <p>
+            화면 우측 하단 상태 표시줄의 <strong>[UTF-8]</strong> 또는 <strong>[EUC-KR]</strong> 글자를 마우스로 클릭하면 즉시 인코딩이 상호 전환되면서 깨졌던 한글이 정상적으로 나타납니다.
+          </p>
+        </div>
+        <div class="card">
+          <h4>줄바꿈 형식 변환 (LF ↔ CRLF)</h4>
+          <p>
+            맥/리눅스 표준 줄바꿈(<strong>LF</strong>)과 윈도우 표준 줄바꿈(<strong>CRLF</strong>)을 하단 상태 표시줄의 글자를 클릭하여 손쉽게 변환할 수 있습니다. 협업 시 줄바꿈 충돌을 예방합니다.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: Settings -->
+    <section id="settings">
+      <h3 class="section-title">⚙️ 6. 환경설정 및 맞춤 구성</h3>
+      <p class="lead">
+        내 눈에 편안한 테마, 글꼴, 크기 및 작업 속도를 높여주는 자동 저장을 설정할 수 있습니다.<br>
+        <span class="os-badge mac">🍎 Mac</span> <kbd>⌘ Cmd</kbd> + <kbd>,</kbd> &nbsp;|&nbsp;
+        <span class="os-badge win">🪟 Windows</span> <kbd>Ctrl</kbd> + <kbd>,</kbd>
+      </p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>설정 탭</th>
+            <th>주요 기능 및 설정 항목</th>
+            <th>권장 설정값</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>글꼴 (Font)</strong></td>
+            <td>D2Coding, Menlo, Consolas, Fira Code 등 에디터 폰트 및 글자 크기, 줄 간격 조절</td>
+            <td>글자 크기 14px / 줄 간격 1.5</td>
+          </tr>
+          <tr>
+            <td><strong>테마 (Theme)</strong></td>
+            <td>다크 테마 (VS Dark), 라이트 테마 (VS Light), 고대비 블랙 테마 선택</td>
+            <td>VS Dark (어두운 화면 권장)</td>
+          </tr>
+          <tr>
+            <td><strong>들여쓰기 (Indent)</strong></td>
+            <td>스페이스(Space) / 탭(Tab) 선택 및 탭 크기(2칸, 4칸) 지정</td>
+            <td>스페이스 2칸 또는 4칸</td>
+          </tr>
+          <tr>
+            <td><strong>저장 (Save)</strong></td>
+            <td>타이핑 멈춤 시 자동 저장(Auto Save) 활성화 여부</td>
+            <td>초보자 분들께 자동 저장 켜기 추천</td>
+          </tr>
+          <tr>
+            <td><strong>차단 확장자 (Security)</strong></td>
+            <td>동영상(mp4), 압축파일(zip), DB 파일 등 텍스트가 아닌 대용량 바이너리 파일 차단</td>
+            <td>기본 권장 차단 목록 활성화</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Section 7: Safe Exit -->
+    <section id="safe-exit">
+      <h3 class="section-title">🛡️ 7. 작업 보호 & 안전 종료</h3>
+      <p class="lead">
+        열심히 작성하던 내용을 저장하지 않은 상태에서 실수로 창을 닫아버려도 걱정하지 마세요! Geditor가 소중한 데이터를 안전하게 지켜줍니다.
+      </p>
+
+      <div class="callout warn">
+        <span>⚠️</span>
+        <div>
+          <strong>미저장 변경사항 보호 시스템</strong><br>
+          파일 내용이 수정된 상태(파일명 옆에 하늘색 동그라미 <code>●</code> 표시)에서 프로그램을 종료하려 하면, 창이 바로 닫히지 않고 확인 모달 대화상자가 나타납니다.
+        </div>
+      </div>
+
+      <div class="compare-container">
+        <div class="compare-box mac-box">
+          <div class="compare-title">🍎 Mac 종료 방법</div>
+          <ul style="padding-left:18px; line-height:1.7;">
+            <li>창 좌측 상단 빨간색 닫기 버튼 (<code>●</code>) 클릭</li>
+            <li>키보드 단축키 <kbd>⌘ Cmd</kbd> + <kbd>Q</kbd></li>
+            <li>상단 메뉴 <code>Geditor</code> ➔ <code>Geditor 종료</code></li>
+          </ul>
+        </div>
+        <div class="compare-box win-box">
+          <div class="compare-title">🪟 Windows 종료 방법</div>
+          <ul style="padding-left:18px; line-height:1.7;">
+            <li>창 우측 상단 닫기 버튼 (<code>✕</code>) 클릭</li>
+            <li>키보드 단축키 <kbd>Alt</kbd> + <kbd>F4</kbd> 또는 <kbd>Ctrl</kbd> + <kbd>Q</kbd></li>
+            <li>창 상단 메뉴 <code>파일</code> ➔ <code>Geditor 종료</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h4>미저장 경고 모달에서의 3가지 선택지:</h4>
+        <ul style="padding-left:20px; margin-top:8px; line-height:1.8; font-size:13px; color:#cbd5e1;">
+          <li><strong style="color:#0284c7;">모두 저장 후 종료 (Enter)</strong>: 수정된 모든 파일을 디스크에 안전하게 저장한 뒤 프로그램을 닫습니다. (새 문서인 경우 저장 위치를 물어봅니다.)</li>
+          <li><strong style="color:#ef4444;">저장하지 않고 종료</strong>: 최근 변경 사항을 저장하지 않고 즉시 닫습니다.</li>
+          <li><strong style="color:#94a3b8;">취소 (Esc)</strong>: 종료를 취소하고 현재 편집 화면으로 그대로 돌아옵니다.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Section 8: Shortcut Table Reference -->
+    <section id="shortcuts">
+      <h3 class="section-title">⌨️ 8. 단축키 총정리 (Mac vs Windows)</h3>
+      <p class="lead">Geditor에서 자주 쓰이는 주요 단축키를 한눈에 비교해 보세요.</p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>기능 설명</th>
+            <th>🍎 Mac 단축키</th>
+            <th>🪟 Windows 단축키</th>
+            <th>메뉴 위치</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>현재 파일 저장</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>S</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>S</kbd></td>
+            <td>파일 ➔ 저장</td>
+          </tr>
+          <tr>
+            <td><strong>새 파일 만들기</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>N</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>N</kbd></td>
+            <td>파일 ➔ 새 파일</td>
+          </tr>
+          <tr>
+            <td><strong>파일 열기</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>O</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>O</kbd></td>
+            <td>파일 ➔ 파일 열기...</td>
+          </tr>
+          <tr>
+            <td><strong>폴더 열기</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>O</kbd></td>
+            <td>파일 ➔ 폴더 열기...</td>
+          </tr>
+          <tr>
+            <td><strong>현재 탭 / 패널 닫기</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>W</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>W</kbd></td>
+            <td>파일 ➔ 탭 / 창 닫기</td>
+          </tr>
+          <tr>
+            <td><strong>좌측 탐색기 토글</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>B</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>B</kbd></td>
+            <td>보기 ➔ 탐색기 표시/숨기기</td>
+          </tr>
+          <tr>
+            <td><strong>화면 우측 분할</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>\</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>\</kbd></td>
+            <td>보기 ➔ 화면 우측 분할</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 실시간 듀얼 뷰</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>V</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd></td>
+            <td>보기 ➔ 실시간 나란히 보기</td>
+          </tr>
+          <tr>
+            <td><strong>내장 터미널 열기</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>T</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>T</kbd></td>
+            <td>보기 ➔ 내장 터미널 열기</td>
+          </tr>
+          <tr>
+            <td><strong>환경설정 열기</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>,</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>,</kbd></td>
+            <td>설정 ➔ 환경설정 열기</td>
+          </tr>
+          <tr>
+            <td><strong>AI 도우미 창 열기/닫기</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>A</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>A</kbd></td>
+            <td>AI 도우미 ➔ 창 토글</td>
+          </tr>
+          <tr>
+            <td><strong>선택 영역으로 AI에 질문하기</strong></td>
+            <td><kbd>⌥ Option</kbd> + <kbd>A</kbd></td>
+            <td><kbd>Alt</kbd> + <kbd>A</kbd></td>
+            <td>우클릭 메뉴 / AI 도우미</td>
+          </tr>
+          <tr>
+            <td><strong>AI 코드 스마트 삽입</strong></td>
+            <td><kbd>⌥ Option</kbd> + <kbd>V</kbd></td>
+            <td><kbd>Alt</kbd> + <kbd>V</kbd></td>
+            <td>우클릭 메뉴 / AI 도우미</td>
+          </tr>
+          <tr>
+            <td><strong>프로그램 완전 종료</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>Q</kbd></td>
+            <td><kbd>Alt</kbd> + <kbd>F4</kbd> / <kbd>Ctrl</kbd> + <kbd>Q</kbd></td>
+            <td>파일 ➔ 종료</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <p>Geditor v0.1.0 • 초고속 Rust 코어 기반 텍스트 에디터</p>
+      <p style="margin-top:4px; color:#64748b;">본 매뉴얼 문서는 Geditor 내장 웹 미리보기 및 일반 웹 브라우저에서 모두 편리하게 열람하실 수 있습니다.</p>
+    </footer>
+
+  </main>
+
+  <script>
+    // OS Switcher Filter Script
+    function setOSFilter(mode, btn) {
+      const root = document.getElementById('manual-root');
+      const buttons = document.querySelectorAll('.os-btn');
+      
+      buttons.forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      root.classList.remove('hide-mac', 'hide-win');
+
+      if (mode === 'mac') {
+        root.classList.add('hide-win');
+      } else if (mode === 'win') {
+        root.classList.add('hide-mac');
+      }
+    }
+
+    // Smooth Scroll Active Link Observer
+    const navLinks = document.querySelectorAll('.nav-item a');
+    const sections = document.querySelectorAll('section');
+
+    window.addEventListener('scroll', () => {
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop - 80;
+        if (window.pageYOffset >= sectionTop) {
+          current = section.getAttribute('id');
+        }
+      });
+
+      navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === `#${current}`) {
+          link.classList.add('active');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
