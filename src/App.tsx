@@ -160,6 +160,44 @@ export default function App() {
     init();
   }, []);
 
+  // Select active tab with auto-follow for preview panes
+  const handleSelectTab = (id: string) => {
+    setActiveTabId(id);
+    setTabs((currentTabs) => {
+      const selected = currentTabs.find((t) => t.id === id);
+      if (selected) {
+        const isMdOrHtml =
+          selected.language === 'markdown' ||
+          selected.language === 'html' ||
+          selected.path.endsWith('.html') ||
+          selected.path.endsWith('.htm');
+
+        setPanes((prevPanes) =>
+          prevPanes.map((p) => {
+            if (p.id === activePaneId && p.type === 'editor') {
+              return { ...p, tabId: id };
+            }
+            if ((p.type === 'markdown-preview' || p.type === 'html-preview') && isMdOrHtml) {
+              const nextType: PaneType =
+                selected.language === 'markdown' ? 'markdown-preview' : 'html-preview';
+              return {
+                ...p,
+                type: nextType,
+                tabId: id,
+                title:
+                  selected.language === 'markdown'
+                    ? `[미리보기] ${selected.name}`
+                    : `[웹 페이지] ${selected.name}`,
+              };
+            }
+            return p;
+          })
+        );
+      }
+      return currentTabs;
+    });
+  };
+
   // Open file in editor
   const handleOpenFile = async (filePath: string) => {
     const fileName = filePath.split('/').pop() || filePath;
@@ -171,10 +209,7 @@ export default function App() {
 
     const existing = tabs.find((t) => t.path === filePath);
     if (existing) {
-      setActiveTabId(existing.id);
-      setPanes((prev) =>
-        prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: existing.id } : p))
-      );
+      handleSelectTab(existing.id);
       return;
     }
 
@@ -195,13 +230,21 @@ export default function App() {
       };
 
       setTabs((prev) => [...prev, newTab]);
-      setActiveTabId(newTab.id);
-
-      setPanes((prev) =>
-        prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: newTab.id } : p))
-      );
+      handleSelectTab(newTab.id);
     } catch (err) {
       showToast(`파일을 열 수 없습니다: ${err}`);
+    }
+  };
+
+  // Open file prompt using native OS dialog
+  const handleOpenFilePrompt = async () => {
+    try {
+      const chosen = await tauriApi.openFileDialog(workspacePath);
+      if (chosen) {
+        handleOpenFile(chosen);
+      }
+    } catch (err) {
+      showToast(`파일 열기 실패: ${err}`);
     }
   };
 
@@ -212,20 +255,25 @@ export default function App() {
 
     let targetPath = current.path;
     if (!targetPath) {
-      const name = prompt('저장할 파일 이름을 입력하세요:', current.name);
-      if (!name) return;
-      targetPath = `${workspacePath}/${name}`;
+      // Open native system save dialog so user chooses folder and filename
+      const chosen = await tauriApi.saveFileDialog(current.name, workspacePath);
+      if (!chosen) {
+        showToast('저장이 취소되었습니다.');
+        return;
+      }
+      targetPath = chosen;
     }
 
     try {
       await tauriApi.writeFile(targetPath, current.content, current.encoding);
+      const fileName = targetPath.split('/').pop() || current.name;
       setTabs((prev) =>
         prev.map((t) =>
           t.id === current.id
             ? {
                 ...t,
                 path: targetPath,
-                name: targetPath.split('/').pop() || t.name,
+                name: fileName,
                 savedContent: t.content,
                 isDirty: false,
                 language: detectLanguage(targetPath),
@@ -234,8 +282,48 @@ export default function App() {
         )
       );
       refreshWorkspace();
+      showToast(`💾 파일이 저장되었습니다: ${targetPath}`);
     } catch (err) {
       alert(`저장에 실패했습니다: ${err}`);
+    }
+  };
+
+  // Save As (always prompts for location and filename)
+  const handleSaveAsActiveTab = async () => {
+    const current = tabs.find((t) => t.id === activeTabId);
+    if (!current) return;
+
+    const defaultDir = current.path
+      ? current.path.substring(0, current.path.lastIndexOf('/'))
+      : workspacePath;
+
+    try {
+      const chosen = await tauriApi.saveFileDialog(current.name, defaultDir);
+      if (!chosen) {
+        showToast('다른 이름으로 저장이 취소되었습니다.');
+        return;
+      }
+
+      await tauriApi.writeFile(chosen, current.content, current.encoding);
+      const fileName = chosen.split('/').pop() || current.name;
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === current.id
+            ? {
+                ...t,
+                path: chosen,
+                name: fileName,
+                savedContent: t.content,
+                isDirty: false,
+                language: detectLanguage(chosen),
+              }
+            : t
+        )
+      );
+      refreshWorkspace();
+      showToast(`💾 다른 이름으로 저장되었습니다: ${chosen}`);
+    } catch (err) {
+      alert(`다른 이름으로 저장 실패: ${err}`);
     }
   };
 
@@ -350,20 +438,24 @@ export default function App() {
 
     let targetPath = current.path;
     if (!targetPath) {
-      const name = prompt('저장할 파일 이름을 입력하세요:', current.name);
-      if (!name) return;
-      targetPath = `${workspacePath}/${name}`;
+      const chosen = await tauriApi.saveFileDialog(current.name, workspacePath);
+      if (!chosen) {
+        showToast('저장이 취소되었습니다.');
+        return;
+      }
+      targetPath = chosen;
     }
 
     try {
       await tauriApi.writeFile(targetPath, current.content, current.encoding);
+      const fileName = targetPath.split('/').pop() || current.name;
       setTabs((prev) =>
         prev.map((t) =>
           t.id === current.id
             ? {
                 ...t,
                 path: targetPath,
-                name: targetPath.split('/').pop() || t.name,
+                name: fileName,
                 savedContent: t.content,
                 isDirty: false,
                 language: detectLanguage(targetPath),
@@ -372,6 +464,7 @@ export default function App() {
         )
       );
       refreshWorkspace();
+      showToast(`💾 파일이 저장되었습니다: ${targetPath}`);
     } catch (err) {
       alert(`저장에 실패했습니다: ${err}`);
     }
@@ -409,6 +502,64 @@ export default function App() {
     };
     setPanes((prev) => [...prev, newPane]);
     setActivePaneId(newPaneId);
+  };
+
+  // Open live preview split (Dual-panel: Left code editor | Right live renderer)
+  const handleOpenPreviewSplit = (targetTabId?: string) => {
+    const targetId = targetTabId || activeTabId;
+    const target = tabs.find((t) => t.id === targetId);
+    if (!target) return;
+
+    const isMd = target.language === 'markdown';
+    const isHtml =
+      target.language === 'html' ||
+      target.path.endsWith('.html') ||
+      target.path.endsWith('.htm');
+
+    if (!isMd && !isHtml) {
+      showToast('마크다운(.md) 또는 HTML(.html) 파일만 실시간 미리보기 분할을 지원합니다.');
+      return;
+    }
+
+    const previewType: PaneType = isMd ? 'markdown-preview' : 'html-preview';
+    const previewTitle = isMd ? `[미리보기] ${target.name}` : `[웹 페이지] ${target.name}`;
+
+    setSplitDirection('horizontal');
+
+    // Check if a preview pane is already open
+    const previewPaneIndex = panes.findIndex(
+      (p) => p.type === 'markdown-preview' || p.type === 'html-preview'
+    );
+
+    if (previewPaneIndex !== -1) {
+      // Point existing preview pane to target
+      setPanes((prev) =>
+        prev.map((p, idx) =>
+          idx === previewPaneIndex
+            ? { ...p, type: previewType, tabId: target.id, title: previewTitle }
+            : p
+        )
+      );
+      showToast(`우측 패널에 '${target.name}' 실시간 렌더링이 연동되었습니다.`);
+    } else {
+      // Create preview pane on the right
+      const previewPaneId = `pane-preview-${Date.now()}`;
+      const newPreviewPane: PaneItem = {
+        id: previewPaneId,
+        type: previewType,
+        title: previewTitle,
+        tabId: target.id,
+      };
+
+      setPanes((prev) => {
+        const firstPane: PaneItem =
+          prev.length > 0
+            ? { ...prev[0], type: 'editor', tabId: target.id, title: target.name }
+            : { id: 'pane-1', type: 'editor', tabId: target.id, title: target.name };
+        return [firstPane, newPreviewPane];
+      });
+      showToast(`'${target.name}' 실시간 렌더링 분할 패널을 열었습니다.`);
+    }
   };
 
   const handleClosePane = (paneId: string) => {
@@ -481,9 +632,15 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isMeta = e.metaKey || e.ctrlKey;
-      if (isMeta && e.key === 's') {
+      if (isMeta && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleSaveAsActiveTab();
+      } else if (isMeta && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         handleSaveActiveTab();
+      } else if (isMeta && (e.key === 'o' || e.key === 'O')) {
+        e.preventDefault();
+        handleOpenFilePrompt();
       } else if (isMeta && e.key === 'n') {
         e.preventDefault();
         handleNewTab();
@@ -500,6 +657,9 @@ export default function App() {
       } else if (isMeta && e.key === '\\') {
         e.preventDefault();
         handleSplitPane(activePaneId, 'horizontal');
+      } else if (isMeta && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        handleOpenPreviewSplit();
       } else if (isMeta && e.key === 't') {
         e.preventDefault();
         handleAddTerminalPane();
@@ -511,7 +671,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTabId, activePaneId, tabs, panes, workspacePath]);
+  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt]);
 
   // Listen to native macOS menu events
   useEffect(() => {
@@ -521,8 +681,12 @@ export default function App() {
         setIsSettingsOpen(true);
       } else if (id === 'new_file') {
         handleNewTab();
+      } else if (id === 'open_file') {
+        handleOpenFilePrompt();
       } else if (id === 'save_file') {
         handleSaveActiveTab();
+      } else if (id === 'save_as_file') {
+        handleSaveAsActiveTab();
       } else if (id === 'close_tab') {
         if (panes.length > 1) {
           handleClosePane(activePaneId);
@@ -624,7 +788,7 @@ export default function App() {
 
         <div style={{ flex: 1, height: '100%', pointerEvents: 'none' }} />
         <span style={{ fontSize: '10px', color: isLight ? '#a1a1aa' : '#52525b', pointerEvents: 'none' }}>
-          Cmd+S 저장 | Cmd+N 새 파일 | Cmd+B 탐색기 | Cmd+\ 우측 분할 | Cmd+T 터미널 | Cmd+, 환경설정
+          Cmd+S 저장 | Cmd+N 새 파일 | Cmd+B 탐색기 | Cmd+\ 우측 분할 | Cmd+Shift+V 실시간 미리보기 | Cmd+T 터미널 | Cmd+, 환경설정
         </span>
       </div>
 
@@ -633,7 +797,9 @@ export default function App() {
         isLight={isLight}
         settings={settings}
         onNewFile={handleNewTab}
+        onOpenFilePrompt={handleOpenFilePrompt}
         onSaveFile={handleSaveActiveTab}
+        onSaveAsFile={handleSaveAsActiveTab}
         onCloseTab={() => {
           if (panes.length > 1) {
             handleClosePane(activePaneId);
@@ -647,6 +813,7 @@ export default function App() {
         onOpenTerminal={handleAddTerminalPane}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onUpdateSettings={handleUpdateSettings}
+        onOpenPreviewSplit={handleOpenPreviewSplit}
       />
 
       {/* Main Workspace Body */}
@@ -701,12 +868,7 @@ export default function App() {
             tabs={tabs}
             activeTabId={activeTabId}
             isLight={isLight}
-            onSelectTab={(id) => {
-              setActiveTabId(id);
-              setPanes((prev) =>
-                prev.map((p) => (p.id === activePaneId && p.type === 'editor' ? { ...p, tabId: id } : p))
-              );
-            }}
+            onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
             onCloseOtherTabs={handleCloseOtherTabs}
             onCloseTabsToRight={handleCloseTabsToRight}
@@ -715,6 +877,7 @@ export default function App() {
             onSplitRight={() => handleSplitPane(activePaneId, 'horizontal')}
             onSplitDown={() => handleSplitPane(activePaneId, 'vertical')}
             onAddTerminalPane={handleAddTerminalPane}
+            onOpenPreviewSplit={handleOpenPreviewSplit}
           />
 
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -734,6 +897,7 @@ export default function App() {
               onUpdateViewMode={handleUpdateViewMode}
               onOpenFile={handleOpenFile}
               showToast={showToast}
+              onOpenPreviewSplit={handleOpenPreviewSplit}
             />
           </div>
         </div>

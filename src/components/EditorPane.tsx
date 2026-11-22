@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import Editor, { loader, OnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import { TabItem, EditorSettings } from '../types';
@@ -38,6 +38,7 @@ interface EditorPaneProps {
   showToast?: (msg: string) => void;
   onChangeContent: (tabId: string, newContent: string) => void;
   onUpdateViewMode: (tabId: string, mode: 'edit' | 'preview' | 'split') => void;
+  onOpenPreviewSplit?: () => void;
 }
 
 export const EditorPane: React.FC<EditorPaneProps> = ({
@@ -48,6 +49,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   showToast,
   onChangeContent,
   onUpdateViewMode,
+  onOpenPreviewSplit,
 }) => {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -59,6 +61,19 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const isCsv = tab.language === 'csv';
   const isHtml = tab.language === 'html' || tab.path.endsWith('.html') || tab.path.endsWith('.htm');
   const isLight = settings.theme === 'vs';
+
+  // Whenever viewMode changes (e.g. from 'edit' directly to 'split'), trigger Monaco layout calculation
+  useEffect(() => {
+    if (editorRef.current) {
+      requestAnimationFrame(() => {
+        editorRef.current?.layout();
+      });
+      const timer = setTimeout(() => {
+        editorRef.current?.layout();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [tab.viewMode]);
 
   // Open detected link or folder/file path
   const handleOpenLink = async (target: string) => {
@@ -489,14 +504,46 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               나란히 보기
             </button>
           )}
+          {onOpenPreviewSplit && (isMarkdown || isHtml) && (
+            <button
+              onClick={onOpenPreviewSplit}
+              title={isMac ? "독립된 2개 패널로 코드와 실시간 렌더링 나란히 열기 (⌘⇧V)" : "독립된 2개 패널로 코드와 실시간 렌더링 나란히 열기 (Ctrl+Shift+V)"}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                border: 'none',
+                cursor: 'pointer',
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                fontWeight: 600,
+                marginLeft: 'auto',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+              }}
+            >
+              <Columns size={12} />
+              ⚡ 2패널 실시간 뷰 분할
+            </button>
+          )}
         </div>
       )}
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', width: '100%', height: '100%' }}>
         {/* Editor component */}
         {(tab.viewMode === 'edit' || ((isMarkdown || isHtml) && tab.viewMode === 'split')) && (
-          <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+          <div
+            style={{
+              flex: tab.viewMode === 'split' ? '0 0 50%' : 1,
+              width: tab.viewMode === 'split' ? '50%' : '100%',
+              minWidth: 0,
+              height: '100%',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
             <Editor
               height="100%"
               language={tab.language}
@@ -534,12 +581,15 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
           <div
             onContextMenu={handlePreviewContextMenu}
             style={{
-              flex: 1,
+              flex: tab.viewMode === 'split' ? '0 0 50%' : 1,
+              width: tab.viewMode === 'split' ? '50%' : '100%',
+              minWidth: 0,
               height: '100%',
               borderLeft: tab.viewMode === 'split' ? (isLight ? '1px solid #e4e4e7' : '1px solid #27272a') : 'none',
+              overflow: 'hidden',
             }}
           >
-            <MarkdownPreview content={tab.content} />
+            <MarkdownPreview content={tab.content} isLight={isLight} />
           </div>
         )}
 
@@ -547,9 +597,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         {isHtml && (tab.viewMode === 'preview' || tab.viewMode === 'split') && (
           <div
             style={{
-              flex: 1,
+              flex: tab.viewMode === 'split' ? '0 0 50%' : 1,
+              width: tab.viewMode === 'split' ? '50%' : '100%',
+              minWidth: 0,
               height: '100%',
               borderLeft: tab.viewMode === 'split' ? (isLight ? '1px solid #e4e4e7' : '1px solid #27272a') : 'none',
+              overflow: 'hidden',
             }}
           >
             <HtmlPreview content={tab.content} filePath={tab.path} isLight={isLight} />

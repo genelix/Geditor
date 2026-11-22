@@ -48,6 +48,22 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       {/* Pane Count */}
       <div>분할 패널: {paneCount}개</div>
 
+      {/* Current File Path */}
+      {activeTab && (
+        <div
+          style={{
+            maxWidth: '380px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: isLight ? '#4b5563' : '#9ca3af',
+          }}
+          title={activeTab.path ? `저장 위치: ${activeTab.path}` : '아직 디스크에 저장되지 않은 새 문서입니다.'}
+        >
+          {activeTab.path ? `📍 ${activeTab.path}` : '📍 (새 문서 - 저장 시 위치 지정)'}
+        </div>
+      )}
+
       <div style={{ flex: 1 }} />
 
       {activeTab && (

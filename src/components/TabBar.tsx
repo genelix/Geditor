@@ -26,6 +26,7 @@ interface TabBarProps {
   onSplitRight: () => void;
   onSplitDown: () => void;
   onAddTerminalPane: () => void;
+  onOpenPreviewSplit?: () => void;
 }
 
 export const TabBar: React.FC<TabBarProps> = ({
@@ -41,7 +42,16 @@ export const TabBar: React.FC<TabBarProps> = ({
   onSplitRight,
   onSplitDown,
   onAddTerminalPane,
+  onOpenPreviewSplit,
 }) => {
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const isPreviewable =
+    activeTab &&
+    (activeTab.language === 'markdown' ||
+      activeTab.language === 'html' ||
+      activeTab.path.endsWith('.html') ||
+      activeTab.path.endsWith('.htm'));
+
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -69,8 +79,27 @@ export const TabBar: React.FC<TabBarProps> = ({
     const tabIndex = tabs.findIndex((t) => t.id === targetTab.id);
     const isOnlyTab = tabs.length <= 1;
     const isLastTab = tabIndex === tabs.length - 1;
+    const isTargetPreviewable =
+      targetTab.language === 'markdown' ||
+      targetTab.language === 'html' ||
+      targetTab.path.endsWith('.html') ||
+      targetTab.path.endsWith('.htm');
 
     return [
+      ...(isTargetPreviewable && onOpenPreviewSplit
+        ? [
+            {
+              label: '실시간 미리보기 패널 분할 (코드 | 렌더링)',
+              icon: <Columns size={14} />,
+              shortcut: isMac ? '⌘⇧V' : 'Ctrl+Shift+V',
+              onClick: () => {
+                onSelectTab(targetTab.id);
+                onOpenPreviewSplit();
+              },
+            },
+            { separator: true },
+          ]
+        : []),
       {
         label: '탭 닫기',
         icon: <X size={14} />,
@@ -114,7 +143,7 @@ export const TabBar: React.FC<TabBarProps> = ({
         },
       },
     ];
-  }, [contextMenu, tabs, isMac, onCloseTab, onCloseOtherTabs, onCloseTabsToRight, onSaveTab, onNewTab]);
+  }, [contextMenu, tabs, isMac, onCloseTab, onCloseOtherTabs, onCloseTabsToRight, onSaveTab, onNewTab, onOpenPreviewSplit, onSelectTab]);
 
   return (
     <div
@@ -269,6 +298,30 @@ export const TabBar: React.FC<TabBarProps> = ({
           paddingLeft: '8px',
         }}
       >
+        {isPreviewable && onOpenPreviewSplit && (
+          <button
+            onClick={onOpenPreviewSplit}
+            title={isMac ? '코드와 렌더링 2개 패널 실시간 분할 (⌘⇧V)' : '코드와 렌더링 2개 패널 실시간 분할 (Ctrl+Shift+V)'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 10px',
+              backgroundColor: '#0284c7',
+              border: '1px solid #0284c7',
+              borderRadius: '4px',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+            }}
+          >
+            <Columns size={13} />
+            ⚡ 실시간 미리보기 분할
+          </button>
+        )}
+
         <button
           onClick={onSplitRight}
           title={isMac ? '우측으로 분할 (⌘\\)' : '우측으로 분할 (Ctrl+\\)'}

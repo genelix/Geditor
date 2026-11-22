@@ -261,3 +261,39 @@ pub fn inspect_path(path: String, base_dir: Option<String>) -> Result<PathInfo, 
         canonical_path: canonical.to_string_lossy().to_string(),
     })
 }
+
+#[tauri::command]
+pub fn save_file_dialog(default_name: Option<String>, default_dir: Option<String>) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(ref name) = default_name {
+        dialog = dialog.set_file_name(name);
+    }
+    if let Some(ref dir) = default_dir {
+        let p = Path::new(dir);
+        if p.exists() {
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            } else if let Some(parent) = p.parent() {
+                dialog = dialog.set_directory(parent);
+            }
+        }
+    }
+    dialog.save_file().map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn open_file_dialog(default_dir: Option<String>) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(ref dir) = default_dir {
+        let p = Path::new(dir);
+        if p.exists() {
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            } else if let Some(parent) = p.parent() {
+                dialog = dialog.set_directory(parent);
+            }
+        }
+    }
+    dialog.pick_file().map(|p| p.to_string_lossy().to_string())
+}
+

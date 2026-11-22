@@ -19,7 +19,9 @@ interface TopMenuBarProps {
   isLight: boolean;
   settings: EditorSettings;
   onNewFile: () => void;
+  onOpenFilePrompt?: () => void;
   onSaveFile: () => void;
+  onSaveAsFile?: () => void;
   onCloseTab: () => void;
   onToggleSidebar: () => void;
   onSplitRight: () => void;
@@ -27,19 +29,18 @@ interface TopMenuBarProps {
   onOpenTerminal: () => void;
   onOpenSettings: () => void;
   onUpdateSettings: (settings: EditorSettings) => void;
+  onOpenPreviewSplit?: () => void;
 }
 
 type MenuKey = 'file' | 'edit' | 'view' | 'settings' | 'help' | null;
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
-const modKey = isMac ? '⌘' : 'Ctrl+';
-const redoKey = isMac ? '⇧⌘Z' : 'Ctrl+Y';
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   isLight,
   settings,
   onNewFile,
+  onOpenFilePrompt,
   onSaveFile,
+  onSaveAsFile,
   onCloseTab,
   onToggleSidebar,
   onSplitRight,
@@ -47,6 +48,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onOpenTerminal,
   onOpenSettings,
   onUpdateSettings,
+  onOpenPreviewSplit,
 }) => {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -175,8 +177,23 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <FileText size={14} />
                 <span>새 파일</span>
               </div>
-              <span style={shortcutStyle}>{modKey}N</span>
+              <span style={shortcutStyle}>⌘N</span>
             </div>
+
+            {onOpenFilePrompt && (
+              <div
+                style={dropdownItemStyle}
+                onClick={() => executeAction(onOpenFilePrompt)}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FolderTree size={14} />
+                  <span>파일 열기...</span>
+                </div>
+                <span style={shortcutStyle}>⌘O</span>
+              </div>
+            )}
 
             <div
               style={dropdownItemStyle}
@@ -186,10 +203,25 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Save size={14} />
-                <span>파일 저장</span>
+                <span>저장</span>
               </div>
-              <span style={shortcutStyle}>{modKey}S</span>
+              <span style={shortcutStyle}>⌘S</span>
             </div>
+
+            {onSaveAsFile && (
+              <div
+                style={dropdownItemStyle}
+                onClick={() => executeAction(onSaveAsFile)}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Save size={14} />
+                  <span>다른 이름으로 저장...</span>
+                </div>
+                <span style={shortcutStyle}>⇧⌘S</span>
+              </div>
+            )}
 
             <div style={separatorStyle} />
 
@@ -203,7 +235,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <X size={14} />
                 <span>탭 / 창 닫기</span>
               </div>
-              <span style={shortcutStyle}>{modKey}W</span>
+              <span style={shortcutStyle}>⌘W</span>
             </div>
           </div>
         )}
@@ -230,7 +262,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               <span>실행 취소 (Undo)</span>
-              <span style={shortcutStyle}>{modKey}Z</span>
+              <span style={shortcutStyle}>⌘Z</span>
             </div>
             <div
               style={dropdownItemStyle}
@@ -239,7 +271,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               <span>다시 실행 (Redo)</span>
-              <span style={shortcutStyle}>{redoKey}</span>
+              <span style={shortcutStyle}>⇧⌘Z</span>
             </div>
 
             <div style={separatorStyle} />
@@ -251,7 +283,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               <span>모두 선택</span>
-              <span style={shortcutStyle}>{modKey}A</span>
+              <span style={shortcutStyle}>⌘A</span>
             </div>
           </div>
         )}
@@ -281,10 +313,25 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <FolderTree size={14} />
                 <span>탐색기 표시 / 숨기기</span>
               </div>
-              <span style={shortcutStyle}>{modKey}B</span>
+              <span style={shortcutStyle}>⌘B</span>
             </div>
 
             <div style={separatorStyle} />
+
+            {onOpenPreviewSplit && (
+              <div
+                style={dropdownItemStyle}
+                onClick={() => executeAction(onOpenPreviewSplit)}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Columns size={14} color="#0284c7" />
+                  <span style={{ fontWeight: 600, color: '#0284c7' }}>실시간 미리보기 패널 분할 (코드 | 렌더링)</span>
+                </div>
+                <span style={shortcutStyle}>⇧⌘V</span>
+              </div>
+            )}
 
             <div
               style={dropdownItemStyle}
@@ -296,7 +343,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <Columns size={14} />
                 <span>화면 우측으로 분할</span>
               </div>
-              <span style={shortcutStyle}>{modKey}\</span>
+              <span style={shortcutStyle}>⌘\</span>
             </div>
 
             <div
@@ -319,9 +366,9 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Terminal size={14} />
-                <span>내장 터미널 ({isMac ? 'zsh' : 'PowerShell'}) 추가</span>
+                <span>내장 터미널 (zsh) 추가</span>
               </div>
-              <span style={shortcutStyle}>{modKey}T</span>
+              <span style={shortcutStyle}>⌘T</span>
             </div>
           </div>
         )}
@@ -357,7 +404,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <Settings size={14} />
                 <span>환경설정 열기 (Preferences)...</span>
               </div>
-              <span style={shortcutStyle}>{modKey},</span>
+              <span style={shortcutStyle}>⌘,</span>
             </div>
 
             <div style={separatorStyle} />
@@ -422,9 +469,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             <div
               style={dropdownItemStyle}
               onClick={() =>
-                executeAction(() =>
-                  onUpdateSettings({ ...settings, showMinimap: !settings.showMinimap })
-                )
+                executeAction(() => onUpdateSettings({ ...settings, showMinimap: !settings.showMinimap }))
               }
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -457,16 +502,16 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               onClick={() =>
                 executeAction(() => {
                   alert(
-                    'Geditor v0.1.0 (Windows / macOS 지원)\n\n' +
+                    'Geditor v0.1.0\n\n' +
                       '고성능 Rust 코어 기반 경량 텍스트 에디터\n\n' +
                       '단축키 안내:\n' +
-                      `• ${modKey}S: 파일 저장\n` +
-                      `• ${modKey}N: 새 파일 생성\n` +
-                      `• ${modKey}W: 탭 / 패널 닫기\n` +
-                      `• ${modKey}B: 탐색기 토글\n` +
-                      `• ${modKey}\\: 우측 화면 분할\n` +
-                      `• ${modKey}T: 내장 터미널 열기\n` +
-                      `• ${modKey},: 환경설정 열기`
+                      '• Cmd+S: 파일 저장\n' +
+                      '• Cmd+N: 새 파일 생성\n' +
+                      '• Cmd+W: 탭 / 패널 닫기\n' +
+                      '• Cmd+B: 탐색기 토글\n' +
+                      '• Cmd+\\: 우측 화면 분할\n' +
+                      '• Cmd+T: 내장 터미널 열기\n' +
+                      '• Cmd+,: 환경설정 열기'
                   );
                 })
               }
@@ -500,10 +545,10 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           cursor: 'pointer',
           fontWeight: 500,
         }}
-        title={`환경설정 열기 (${modKey},)`}
+        title="환경설정 열기 (Cmd+,)"
       >
         <Settings size={12} color="#0284c7" />
-        <span>환경설정 ({modKey},)</span>
+        <span>환경설정 (Cmd+,)</span>
       </button>
     </div>
   );
