@@ -145,7 +145,9 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     if (!editor) return;
     editor.focus();
 
-    const parsed = extractAiCode(rawText);
+    const isMarkdownDoc = tab.language === 'markdown' || tab.name.endsWith('.md');
+    const isTable = rawText.includes('|') && rawText.includes('---');
+
     const model = editor.getModel();
     const pos = editor.getPosition();
     let currentLinePrefix = '';
@@ -154,9 +156,14 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       currentLinePrefix = lineContent.slice(0, pos.column - 1);
     }
 
-    const textToInsert = parsed.isExtracted
-      ? adjustIndentation(parsed.code, currentLinePrefix)
-      : rawText;
+    let textToInsert = rawText;
+    // 마크다운 문서가 아니거나 표가 아닌 순수 코드 파일(.py, .js 등)인 경우에만 코드 블록 펜스 정돈 적용
+    if (!isMarkdownDoc && !isTable) {
+      const parsed = extractAiCode(rawText);
+      if (parsed.isExtracted) {
+        textToInsert = adjustIndentation(parsed.code, currentLinePrefix);
+      }
+    }
 
     const sel = editor.getSelection();
     if (sel) {
@@ -172,7 +179,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         editor.revealPositionInCenterIfOutsideViewport(newPos);
       }
     }
-    showToast?.('✨ 선택한 AI 내용이 에디터 본문에 삽입되었습니다.');
+    showToast?.('✨ 선택한 AI 마크다운 내용이 에디터 본문에 삽입되었습니다.');
   };
 
   // Copy selected code with AI Prompt template

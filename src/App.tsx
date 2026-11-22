@@ -550,18 +550,18 @@ export default function App() {
     };
   }, [tabs, activeTabId, settings.autoSave, settings.autoSaveDelaySec]);
 
-  // New blank tab
+  // New blank tab (default format: Markdown .md)
   const handleNewTab = () => {
     const newTab: TabItem = {
       id: `tab-${Date.now()}`,
       path: '',
-      name: '새문서.txt',
+      name: '새문서.md',
       content: '',
       savedContent: '',
       isDirty: false,
       encoding: settings.defaultEncoding,
       lineEnding: settings.defaultLineEnding,
-      language: 'plaintext',
+      language: 'markdown',
       viewMode: 'edit',
     };
     setTabs((prev) => [...prev, newTab]);

@@ -61,39 +61,210 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
     window.__geditor_tracker_installed = true;
     window.__geditor_last_selected_text = "";
 
-    function getAnySelection() {
-        try {
-            // 1. Standard window selection
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-                const s = sel.toString();
-                if (s && s.trim().length > 0) return s;
-            }
+    function domToMarkdown(node) {
+        if (!node) return "";
+        if (node.nodeType === 3) return node.nodeValue; // Node.TEXT_NODE
+        if (node.nodeType !== 1) return ""; // Node.ELEMENT_NODE
 
-            // 2. Active input / textarea
-            const act = document.activeElement;
-            if (act && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) {
-                const s = act.value.substring(act.selectionStart, act.selectionEnd);
-                if (s && s.trim().length > 0) return s;
-            }
+        const tag = (node.tagName || "").toUpperCase();
 
-            // 3. Shadow DOM / Web Components (Gemini, Lit, etc.)
-            let curr = act;
-            while (curr && curr.shadowRoot) {
-                const shadowSel = curr.shadowRoot.getSelection ? curr.shadowRoot.getSelection() : null;
-                if (shadowSel) {
-                    const s = shadowSel.toString();
-                    if (s && s.trim().length > 0) return s;
-                }
-                curr = curr.shadowRoot.activeElement;
+        // KaTeX / Math support
+        if (node.classList && (node.classList.contains('katex') || node.classList.contains('math'))) {
+            const ann = node.querySelector('annotation[encoding*="tex"]');
+            if (ann && ann.textContent) {
+                const isBlock = node.classList.contains('katex-display') || tag === 'DIV';
+                return isBlock ? "\n\n$$" + ann.textContent.trim() + "$$\n\n" : " $" + ann.textContent.trim() + "$ ";
             }
-        } catch(e) {}
-        return "";
+        }
+
+        // Code block
+        if (tag === 'PRE') {
+            const codeEl = node.querySelector('code');
+            let lang = '';
+            if (codeEl) {
+                const m = (codeEl.className || '').match(/language-(\w+)|lang-(\w+)/);
+                if (m) lang = m[1] || m[2] || '';
+            }
+            const codeText = (codeEl || node).textContent || '';
+            return "\n\n```" + lang + "\n" + codeText.replace(/\r\n/g, "\n").trim() + "\n```\n\n";
+        }
+
+        // Inline code
+        if (tag === 'CODE') {
+            if (node.parentElement && node.parentElement.tagName === 'PRE') {
+                return node.textContent || '';
+            }
+            const text = node.textContent || '';
+            return text ? " `" + text + "` " : "";
+        }
+
+        // Table formatting (GitHub Flavored Markdown)
+        if (tag === 'TABLE') {
+            return formatTableToMarkdown(node);
+        }
+
+        // Headings
+        if (tag === 'H1') return "\n\n# " + childrenToMarkdown(node).trim() + "\n\n";
+        if (tag === 'H2') return "\n\n## " + childrenToMarkdown(node).trim() + "\n\n";
+        if (tag === 'H3') return "\n\n### " + childrenToMarkdown(node).trim() + "\n\n";
+        if (tag === 'H4') return "\n\n#### " + childrenToMarkdown(node).trim() + "\n\n";
+        if (tag === 'H5') return "\n\n##### " + childrenToMarkdown(node).trim() + "\n\n";
+        if (tag === 'H6') return "\n\n###### " + childrenToMarkdown(node).trim() + "\n\n";
+
+        // Bold & strong
+        if (tag === 'STRONG' || tag === 'B') {
+            const c = childrenToMarkdown(node).trim();
+            return c ? "**" + c + "**" : "";
+        }
+
+        // Italics & emphasis
+        if (tag === 'EM' || tag === 'I') {
+            const c = childrenToMarkdown(node).trim();
+            return c ? "*" + c + "*" : "";
+        }
+
+        // Strikethrough
+        if (tag === 'S' || tag === 'DEL' || tag === 'STRIKE') {
+            const c = childrenToMarkdown(node).trim();
+            return c ? "~~" + c + "~~" : "";
+        }
+
+        // Blockquotes
+        if (tag === 'BLOCKQUOTE') {
+            const lines = childrenToMarkdown(node).trim().split('\n');
+            return "\n\n" + lines.map(l => "> " + l).join('\n') + "\n\n";
+        }
+
+        // Lists
+        if (tag === 'UL') {
+            const lis = Array.from(node.children).filter(c => c.tagName === 'LI');
+            if (lis.length === 0) return childrenToMarkdown(node);
+            return "\n\n" + lis.map(li => "- " + childrenToMarkdown(li).trim()).join('\n') + "\n\n";
+        }
+        if (tag === 'OL') {
+            const lis = Array.from(node.children).filter(c => c.tagName === 'LI');
+            if (lis.length === 0) return childrenToMarkdown(node);
+            return "\n\n" + lis.map((li, i) => (i + 1) + ". " + childrenToMarkdown(li).trim()).join('\n') + "\n\n";
+        }
+        if (tag === 'LI') {
+            return childrenToMarkdown(node);
+        }
+
+        // Links
+        if (tag === 'A') {
+            const href = node.getAttribute('href') || '';
+            const text = childrenToMarkdown(node).trim();
+            if (!href) return text;
+            return "[" + (text || href) + "](" + href + ")";
+        }
+
+        // Line break & separator
+        if (tag === 'HR') return "\n\n---\n\n";
+        if (tag === 'BR') return "\n";
+
+        // Paragraphs
+        if (tag === 'P') {
+            const c = childrenToMarkdown(node).trim();
+            return c ? "\n\n" + c + "\n\n" : "";
+        }
+
+        return childrenToMarkdown(node);
     }
+
+    function childrenToMarkdown(parent) {
+        let res = "";
+        for (let i = 0; i < parent.childNodes.length; i++) {
+            res += domToMarkdown(parent.childNodes[i]);
+        }
+        return res;
+    }
+
+    function formatTableToMarkdown(table) {
+        const allTrs = Array.from(table.querySelectorAll('tr'));
+        function cellText(cell) {
+            let t = domToMarkdown(cell).trim().replace(/\r?\n+/g, " ").replace(/\|/g, "\\|");
+            return t || " ";
+        }
+
+        let rows = allTrs.map(tr => {
+            return Array.from(tr.querySelectorAll('th, td')).map(cellText);
+        }).filter(r => r.length > 0);
+
+        if (rows.length === 0) {
+            const directCells = Array.from(table.querySelectorAll('th, td'));
+            if (directCells.length > 0) {
+                return "| " + directCells.map(cellText).join(" | ") + " |";
+            }
+            return "";
+        }
+
+        const maxCols = Math.max(...rows.map(r => r.length));
+        if (maxCols === 0) return "";
+
+        let headers = rows[0];
+        while (headers.length < maxCols) headers.push(" ");
+
+        const headerLine = "| " + headers.join(" | ") + " |";
+        const sepLine = "| " + headers.map(() => "---").join(" | ") + " |";
+
+        const bodyLines = rows.slice(1).map(row => {
+            while (row.length < maxCols) row.push(" ");
+            return "| " + row.join(" | ") + " |";
+        });
+
+        return "\n\n" + [headerLine, sepLine, ...bodyLines].join("\n") + "\n\n";
+    }
+
+    window.__geditor_get_selection_markdown = function() {
+        try {
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return "";
+            if (sel.isCollapsed && sel.toString().trim().length === 0) return "";
+
+            const range = sel.getRangeAt(0);
+
+            // If selection is inside PRE/CODE, extract pure code block
+            let container = range.commonAncestorContainer;
+            let el = container.nodeType === 1 ? container : container.parentElement;
+            while (el && el !== document.body) {
+                if (el.tagName === 'PRE') {
+                    const codeText = sel.toString();
+                    const codeEl = el.querySelector('code');
+                    let lang = '';
+                    if (codeEl) {
+                        const m = (codeEl.className || '').match(/language-(\w+)|lang-(\w+)/);
+                        if (m) lang = m[1] || m[2] || '';
+                    }
+                    return "```" + lang + "\n" + codeText.replace(/\r\n/g, "\n").trim() + "\n```";
+                }
+                el = el.parentElement;
+            }
+
+            const fragment = range.cloneContents();
+            const tempDiv = document.createElement('div');
+            tempDiv.appendChild(fragment);
+
+            // Table check
+            if (tempDiv.querySelector('table')) {
+                return domToMarkdown(tempDiv).trim().replace(/\n{3,}/g, "\n\n");
+            } else if (tempDiv.querySelector('tr, td, th')) {
+                const wrapTable = document.createElement('table');
+                wrapTable.innerHTML = tempDiv.innerHTML;
+                return domToMarkdown(wrapTable).trim().replace(/\n{3,}/g, "\n\n");
+            }
+
+            const md = domToMarkdown(tempDiv).trim().replace(/\n{3,}/g, "\n\n");
+            if (md && md.length > 0) return md;
+
+            return sel.toString();
+        } catch (e) {
+            return window.getSelection() ? window.getSelection().toString() : "";
+        }
+    };
 
     function recordSelection() {
         try {
-            const text = getAnySelection();
+            const text = window.__geditor_get_selection_markdown();
             if (text && text.trim().length > 0) {
                 window.__geditor_last_selected_text = text;
             }
@@ -200,17 +371,21 @@ pub async fn get_ai_selected_text(app: AppHandle) -> Result<String, String> {
     let script = r#"
         (function() {
             try {
-                // 1. Check live window selection first
-                const sel = window.getSelection();
-                if (sel && sel.rangeCount > 0) {
-                    const text = sel.toString();
-                    if (text && text.trim().length > 0) {
-                        window.__geditor_last_selected_text = text;
-                        return text;
+                // 1. Check live window selection with Markdown formatting
+                if (typeof window.__geditor_get_selection_markdown === 'function') {
+                    const md = window.__geditor_get_selection_markdown();
+                    if (md && md.trim().length > 0) {
+                        window.__geditor_last_selected_text = md;
+                        return md;
                     }
                 }
 
-                // 2. Check active input / textarea selection
+                // 2. Check previously tracked selection (survives blur & window focus shifts!)
+                if (window.__geditor_last_selected_text && window.__geditor_last_selected_text.trim().length > 0) {
+                    return window.__geditor_last_selected_text;
+                }
+
+                // 3. Check active input / textarea selection
                 const act = document.activeElement;
                 if (act && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) {
                     const s = act.value.substring(act.selectionStart, act.selectionEnd);
@@ -220,27 +395,7 @@ pub async fn get_ai_selected_text(app: AppHandle) -> Result<String, String> {
                     }
                 }
 
-                // 3. Check previously tracked selection (survives blur & window focus shifts!)
-                if (window.__geditor_last_selected_text && window.__geditor_last_selected_text.trim().length > 0) {
-                    const saved = window.__geditor_last_selected_text;
-                    return saved;
-                }
-
-                // 4. Check shadow DOM active element
-                let curr = act;
-                while (curr && curr.shadowRoot) {
-                    const shadowSel = curr.shadowRoot.getSelection ? curr.shadowRoot.getSelection() : null;
-                    if (shadowSel) {
-                        const s = shadowSel.toString();
-                        if (s && s.trim().length > 0) {
-                            window.__geditor_last_selected_text = s;
-                            return s;
-                        }
-                    }
-                    curr = curr.shadowRoot.activeElement;
-                }
-
-                // 5. Fallback: check if any code block exists in AI response
+                // 4. Fallback: check if any code block exists in AI response
                 const codeSelectors = [
                     'pre code',
                     'code-block pre',
