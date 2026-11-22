@@ -41,6 +41,19 @@ div:hover > div > .file-hover-action {
   display: block !important;
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-icon {
+  animation: spin 0.6s linear infinite;
+}
+
 /* Markdown Preview Typography (GitHub Dark Style) */
 .markdown-preview-container h1,
 .markdown-preview-container h2,

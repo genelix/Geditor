@@ -64,9 +64,9 @@ interface SidebarProps {
   width: number;
   blockedExtensions?: string[];
   onOpenFile: (path: string) => void;
-  onRefreshWorkspace: () => void;
+  onRefreshWorkspace: () => Promise<void> | void;
   onSelectSearchResult: (match: SearchMatch) => void;
-  onChangeWorkspace?: (path: string) => void;
+  onChangeWorkspace?: (path: string) => Promise<void> | void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -191,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // Case 1: Exact match with current workspace
     if (normFav === normWorkspace) {
-      onRefreshWorkspace();
+      await handleFullRefresh();
       setSelectedPath(normFav);
       return;
     }
@@ -249,6 +249,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }, 200);
   };
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Full refresh of workspace root AND all currently expanded subfolders
+  const handleFullRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      if (onRefreshWorkspace) {
+        await onRefreshWorkspace();
+      }
+
+      const paths = Object.keys(expandedFolders);
+      if (paths.length > 0) {
+        const updated: Record<string, FileNode[]> = {};
+        await Promise.all(
+          paths.map(async (folderPath) => {
+            try {
+              const children = await tauriApi.listDirectory(folderPath);
+              updated[folderPath] = children;
+            } catch (e) {
+              // Folder likely removed
+            }
+          })
+        );
+        setExpandedFolders(updated);
+      }
+    } catch (err) {
+      console.error('Full refresh error:', err);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 350);
+    }
+  };
+
   const handleToggleFolder = async (folderPath: string) => {
     if (expandedFolders[folderPath]) {
       const next = { ...expandedFolders };
@@ -282,7 +314,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
       setCreatingType(null);
       setCreateName('');
-      onRefreshWorkspace();
+
+      // If created in a subfolder, ensure that folder is loaded in expandedFolders
+      if (parent !== workspacePath) {
+        try {
+          const children = await tauriApi.listDirectory(parent);
+          setExpandedFolders((prev) => ({ ...prev, [parent]: children }));
+        } catch (e) {}
+      }
+
+      await handleFullRefresh();
+
+      setSelectedPath(targetPath);
+      setTimeout(() => {
+        const el = document.getElementById(`file-item-${encodeURIComponent(targetPath)}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 150);
     } catch (e) {
       alert(`생성 중 오류 발생: ${e}`);
     }
@@ -294,7 +341,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (confirm(`정말로 "${itemName}" 항목을 삭제하시겠습니까?`)) {
       try {
         await tauriApi.deleteEntry(path);
-        onRefreshWorkspace();
+
+        // Remove from expandedFolders
+        setExpandedFolders((prev) => {
+          const next = { ...prev };
+          delete next[path];
+          Object.keys(next).forEach((k) => {
+            if (k.startsWith(path + '/')) {
+              delete next[k];
+            }
+          });
+          return next;
+        });
+
+        // Remove from favoriteFolders if present
+        setFavoriteFolders((prev) => {
+          const next = prev.filter((p) => p !== path && !p.startsWith(path + '/'));
+          try {
+            localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+
+        await handleFullRefresh();
       } catch (err) {
         alert(`삭제 실패: ${err}`);
       }
@@ -309,7 +378,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const newPath = `${parentDir}/${newName.trim()}`;
     try {
       await tauriApi.renameEntry(item.path, newPath);
-      onRefreshWorkspace();
+
+      setExpandedFolders((prev) => {
+        const next = { ...prev };
+        if (next[item.path]) {
+          next[newPath] = next[item.path];
+          delete next[item.path];
+        }
+        return next;
+      });
+
+      setFavoriteFolders((prev) => {
+        const next = prev.map((p) => (p === item.path ? newPath : p));
+        try {
+          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      await handleFullRefresh();
+      setSelectedPath(newPath);
     } catch (err) {
       alert(`이름 변경 실패: ${err}`);
     }
@@ -515,7 +603,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           label: '목록 새로고침',
           icon: <RefreshCw size={14} />,
-          onClick: onRefreshWorkspace,
+          onClick: handleFullRefresh,
         },
       ];
     }
@@ -530,7 +618,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick: () => handleToggleFavorite(item.path),
         },
         {
-          label: '이 폴더를 워크스페이스로 열기',
+          label: '이 폴더를 단독 워크스페이스로 열기',
           icon: <FolderOpen size={14} color="#38bdf8" />,
           onClick: () => onChangeWorkspace?.(item.path),
         },
@@ -560,7 +648,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           label: '목록 새로고침',
           icon: <RefreshCw size={14} />,
-          onClick: onRefreshWorkspace,
+          onClick: handleFullRefresh,
         },
         { separator: true },
         {
@@ -603,7 +691,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onClick: () => handleDeleteEntry(item.path),
       },
     ];
-  }, [contextMenu, workspacePath, favoriteFolders, onRefreshWorkspace, onOpenFile, onChangeWorkspace]);
+  }, [contextMenu, workspacePath, favoriteFolders, handleFullRefresh, onOpenFile, onChangeWorkspace]);
 
   const renderFileList = (items: FileNode[], depth = 0) => {
     return items.map((item) => {
@@ -1078,17 +1166,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <FolderPlus size={14} />
             </button>
             <button
-              onClick={onRefreshWorkspace}
+              onClick={handleFullRefresh}
               style={{
                 border: 'none',
                 background: 'transparent',
                 color: isLight ? '#52525b' : '#a1a1aa',
                 cursor: 'pointer',
                 padding: '2px',
+                display: 'flex',
+                alignItems: 'center',
               }}
               title="목록 새로고침"
             >
-              <RefreshCw size={12} />
+              <RefreshCw size={12} className={isRefreshing ? 'spin-icon' : undefined} />
             </button>
           </div>
 
@@ -1107,9 +1197,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   fontSize: '11px',
                   color: isLight ? '#52525b' : '#a1a1aa',
                   marginBottom: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
                 }}
               >
-                {creatingType === 'file' ? '새 파일 이름 입력:' : '새 폴더 이름 입력:'}
+                <span>{creatingType === 'file' ? '새 파일 이름 입력:' : '새 폴더 이름 입력:'}</span>
+                <span
+                  style={{
+                    color: '#0284c7',
+                    fontSize: '10px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '140px',
+                  }}
+                  title={targetParentDir}
+                >
+                  ({targetParentDir === workspacePath ? '루트' : targetParentDir.split('/').pop()})
+                </span>
               </div>
               <input
                 type="text"

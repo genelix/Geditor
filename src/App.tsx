@@ -855,7 +855,7 @@ export default function App() {
             width={sidebarWidth}
             blockedExtensions={settings.blockedExtensions}
             onOpenFile={handleOpenFile}
-            onRefreshWorkspace={() => refreshWorkspace()}
+            onRefreshWorkspace={refreshWorkspace}
             onSelectSearchResult={(match: SearchMatch) => handleOpenFile(match.file_path)}
             onChangeWorkspace={handleChangeWorkspace}
           />
