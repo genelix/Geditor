@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { EditorSettings, DEFAULT_BLOCKED_EXTENSIONS } from '../types';
+import { EditorSettings, DEFAULT_BLOCKED_EXTENSIONS, DEFAULT_AI_URLS } from '../types';
 import {
   X,
   Type,
@@ -13,6 +13,7 @@ import {
   Database,
   Archive,
   Info,
+  Bot,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -28,7 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'font' | 'theme' | 'indent' | 'save' | 'blocked'>('font');
+  const [activeTab, setActiveTab] = useState<'font' | 'theme' | 'indent' | 'save' | 'blocked' | 'ai'>('font');
   const [newExtInput, setNewExtInput] = useState('');
 
   if (!isOpen) return null;
@@ -265,6 +266,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <ShieldAlert size={14} />
               바이너리 파일 제한
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ai')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: activeTab === 'ai' ? (isLight ? '#e4e4e7' : '#27272a') : 'transparent',
+                color: activeTab === 'ai' ? '#38bdf8' : isLight ? '#3f3f46' : '#a1a1aa',
+                fontSize: '12px',
+                fontWeight: activeTab === 'ai' ? 600 : 400,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <Bot size={14} />
+              AI 도우미 주소
             </button>
           </div>
 
@@ -769,6 +791,145 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. AI 도우미 접속 주소 설정 */}
+            {activeTab === 'ai' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ borderBottom: isLight ? '1px solid #e4e4e7' : '1px solid #27272a', paddingBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Bot size={16} color="#38bdf8" />
+                    <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                      AI 도우미 접속 주소 (URL) 설정
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '11px', color: isLight ? '#71717a' : '#a1a1aa', lineHeight: 1.5 }}>
+                    회사 사내 프라이빗 엔터프라이즈 AI 포털이나 맞춤 프록시 웹 주소를 설정할 수 있습니다.
+                  </p>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+                    Google Gemini 접속 주소
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.aiUrls?.gemini ?? DEFAULT_AI_URLS.gemini}
+                    onChange={(e) => update('aiUrls', { ...(settings.aiUrls || DEFAULT_AI_URLS), gemini: e.target.value })}
+                    placeholder="https://gemini.google.com/app"
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: isLight ? '#ffffff' : '#27272a',
+                      border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                      borderRadius: '5px',
+                      color: isLight ? '#18181b' : '#fff',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: isLight ? '#71717a' : '#71717a', marginTop: '4px', display: 'block' }}>
+                    기본값: {DEFAULT_AI_URLS.gemini}
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+                    ChatGPT (Codex) 접속 주소
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.aiUrls?.chatgpt ?? DEFAULT_AI_URLS.chatgpt}
+                    onChange={(e) => update('aiUrls', { ...(settings.aiUrls || DEFAULT_AI_URLS), chatgpt: e.target.value })}
+                    placeholder="https://chatgpt.com"
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: isLight ? '#ffffff' : '#27272a',
+                      border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                      borderRadius: '5px',
+                      color: isLight ? '#18181b' : '#fff',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: isLight ? '#71717a' : '#71717a', marginTop: '4px', display: 'block' }}>
+                    기본값: {DEFAULT_AI_URLS.chatgpt}
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+                    Anthropic Claude 접속 주소
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.aiUrls?.claude ?? DEFAULT_AI_URLS.claude}
+                    onChange={(e) => update('aiUrls', { ...(settings.aiUrls || DEFAULT_AI_URLS), claude: e.target.value })}
+                    placeholder="https://claude.ai/new"
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: isLight ? '#ffffff' : '#27272a',
+                      border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                      borderRadius: '5px',
+                      color: isLight ? '#18181b' : '#fff',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: isLight ? '#71717a' : '#71717a', marginTop: '4px', display: 'block' }}>
+                    기본값: {DEFAULT_AI_URLS.claude}
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+                    사내 엔터프라이즈 AI 접속 주소 (Enterprise Portal)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.aiUrls?.enterprise ?? ''}
+                    onChange={(e) => update('aiUrls', { ...(settings.aiUrls || DEFAULT_AI_URLS), enterprise: e.target.value })}
+                    placeholder="예: https://ai.mycompany.internal 또는 사내 AI 웹 주소"
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: isLight ? '#ffffff' : '#27272a',
+                      border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                      borderRadius: '5px',
+                      color: isLight ? '#18181b' : '#fff',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: isLight ? '#71717a' : '#71717a', marginTop: '4px', display: 'block' }}>
+                    사내 전용 포털 주소를 입력하면 AI 도우미 사이드 패널 상단에 '사내 AI' 탭이 활성화됩니다.
+                  </span>
+                </div>
+
+                <div style={{ paddingTop: '8px' }}>
+                  <button
+                    onClick={() => update('aiUrls', { ...DEFAULT_AI_URLS })}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      backgroundColor: isLight ? '#e4e4e7' : '#27272a',
+                      border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                      borderRadius: '5px',
+                      color: isLight ? '#18181b' : '#e4e4e7',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCcw size={12} />
+                    기본 접속 주소로 초기화
+                  </button>
                 </div>
               </div>
             )}

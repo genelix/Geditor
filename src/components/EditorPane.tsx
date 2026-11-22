@@ -139,6 +139,42 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   };
 
+  // Direct AI text insertion from AI Side Panel selection
+  const handleDirectInsertText = (rawText: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+
+    const parsed = extractAiCode(rawText);
+    const model = editor.getModel();
+    const pos = editor.getPosition();
+    let currentLinePrefix = '';
+    if (model && pos) {
+      const lineContent = model.getLineContent(pos.lineNumber);
+      currentLinePrefix = lineContent.slice(0, pos.column - 1);
+    }
+
+    const textToInsert = parsed.isExtracted
+      ? adjustIndentation(parsed.code, currentLinePrefix)
+      : rawText;
+
+    const sel = editor.getSelection();
+    if (sel) {
+      editor.executeEdits('ai-direct-insert', [
+        {
+          range: sel,
+          text: textToInsert,
+          forceMoveMarkers: true,
+        },
+      ]);
+      const newPos = editor.getPosition();
+      if (newPos) {
+        editor.revealPositionInCenterIfOutsideViewport(newPos);
+      }
+    }
+    showToast?.('✨ 선택한 AI 내용이 에디터 본문에 삽입되었습니다.');
+  };
+
   // Copy selected code with AI Prompt template
   const handleCopyAsAiPrompt = async (intent: 'general' | 'fix' | 'optimize' | 'explain' = 'general') => {
     const editor = editorRef.current;
@@ -189,11 +225,20 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     const onAskAi = () => {
       handleAskAiWithSelection();
     };
+    const onInsertText = (e: Event) => {
+      const customEvent = e as CustomEvent<{ text: string }>;
+      const text = customEvent.detail?.text;
+      if (text) {
+        handleDirectInsertText(text);
+      }
+    };
     window.addEventListener('geditor-smart-insert-ai', onAiInsert);
     window.addEventListener('geditor-ask-ai', onAskAi);
+    window.addEventListener('geditor-insert-text', onInsertText);
     return () => {
       window.removeEventListener('geditor-smart-insert-ai', onAiInsert);
       window.removeEventListener('geditor-ask-ai', onAskAi);
+      window.removeEventListener('geditor-insert-text', onInsertText);
     };
   }, []);
 

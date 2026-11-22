@@ -45,6 +45,13 @@ export interface SearchMatch {
   match_end: number;
 }
 
+export interface AiUrls {
+  gemini: string;
+  chatgpt: string;
+  claude: string;
+  enterprise?: string;
+}
+
 export interface EditorSettings {
   fontFamily: string;
   fontSize: number;
@@ -62,6 +69,7 @@ export interface EditorSettings {
   defaultEncoding: 'UTF-8' | 'EUC-KR';
   defaultLineEnding: 'LF' | 'CRLF';
   blockedExtensions: string[];
+  aiUrls?: AiUrls;
 }
 
 export const DEFAULT_BLOCKED_EXTENSIONS: string[] = [
@@ -83,6 +91,13 @@ export const DEFAULT_BLOCKED_EXTENSIONS: string[] = [
   'ttf', 'otf', 'woff', 'woff2', 'eot',
 ];
 
+export const DEFAULT_AI_URLS: AiUrls = {
+  gemini: 'https://gemini.google.com/app',
+  chatgpt: 'https://chatgpt.com',
+  claude: 'https://claude.ai/new',
+  enterprise: '',
+};
+
 export const DEFAULT_SETTINGS: EditorSettings = {
   fontFamily: 'Menlo, Monaco, "Courier New", "D2Coding", monospace',
   fontSize: 14,
@@ -100,4 +115,5 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   defaultEncoding: 'UTF-8',
   defaultLineEnding: 'LF',
   blockedExtensions: DEFAULT_BLOCKED_EXTENSIONS,
+  aiUrls: DEFAULT_AI_URLS,
 };

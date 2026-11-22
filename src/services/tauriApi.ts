@@ -110,12 +110,12 @@ export const tauriApi = {
   },
 
   // AI Assistant Window
-  openAiAssistant: async (service: 'gemini' | 'chatgpt' | 'claude' | string = 'gemini', snap = false): Promise<void> => {
-    return await invoke('open_ai_assistant', { service, snap });
+  openAiAssistant: async (service: 'gemini' | 'chatgpt' | 'claude' | string = 'gemini', customUrl?: string, snap = false): Promise<void> => {
+    return await invoke('open_ai_assistant', { service, customUrl, snap });
   },
 
-  toggleAiAssistant: async (service?: string): Promise<boolean> => {
-    return await invoke<boolean>('toggle_ai_assistant', { service });
+  toggleAiAssistant: async (service?: string, customUrl?: string): Promise<boolean> => {
+    return await invoke<boolean>('toggle_ai_assistant', { service, customUrl });
   },
 
   snapAiAssistant: async (): Promise<void> => {
@@ -124,6 +124,55 @@ export const tauriApi = {
 
   setAiAssistantAlwaysOnTop: async (alwaysOnTop: boolean): Promise<void> => {
     return await invoke('set_ai_assistant_always_on_top', { alwaysOnTop });
+  },
+
+  // AI Side Panel
+  showAiPanel: async (params: {
+    service?: string;
+    customUrl?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<void> => {
+    return await invoke('show_ai_panel', {
+      service: params.service,
+      customUrl: params.customUrl,
+      x: params.x,
+      y: params.y,
+      width: params.width,
+      height: params.height,
+    });
+  },
+
+  hideAiPanel: async (): Promise<void> => {
+    return await invoke('hide_ai_panel');
+  },
+
+  updateAiPanelBounds: async (params: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<void> => {
+    return await invoke('update_ai_panel_bounds', {
+      x: params.x,
+      y: params.y,
+      width: params.width,
+      height: params.height,
+    });
+  },
+
+  getAiSelectedText: async (): Promise<string> => {
+    return await invoke<string>('get_ai_selected_text');
+  },
+
+  reloadAiPanel: async (): Promise<void> => {
+    return await invoke('reload_ai_panel');
+  },
+
+  navigateAiPanel: async (url: string): Promise<void> => {
+    return await invoke('navigate_ai_panel', { url });
   },
 
   // Ask AI with pre-filled text inserted into the AI's input box

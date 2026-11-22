@@ -10,6 +10,7 @@ import { SplitContainer } from './components/SplitContainer';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
 import { UnsavedChangesModal } from './components/UnsavedChangesModal';
+import { AiSidePanel } from './components/AiSidePanel';
 import { AlertTriangle, X, Sparkles } from 'lucide-react';
 import { extractAiCode } from './utils/aiCodeParser';
 
@@ -29,6 +30,18 @@ export default function App() {
     lineCount: number;
   } | null>(null);
   const lastClipboardTextRef = useRef<string>('');
+
+  // AI Side Panel state
+  const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
+  const [aiPanelWidth, setAiPanelWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('geditor_ai_panel_width');
+      if (saved) return Math.max(340, Math.min(950, Number(saved)));
+    } catch (e) {}
+    return 480;
+  });
+  const [activeAiService, setActiveAiService] = useState<'gemini' | 'chatgpt' | 'claude' | 'enterprise'>('gemini');
+  const aiViewportRef = useRef<HTMLDivElement | null>(null);
 
   // Resizable Sidebar width state
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -807,25 +820,85 @@ export default function App() {
     );
   };
 
-  // AI Assistant Handlers
-  const handleOpenAiAssistant = useCallback(async (service: 'gemini' | 'chatgpt' | 'claude' = 'gemini') => {
-    try {
-      await tauriApi.openAiAssistant(service, false);
-    } catch (e) {
-      console.error('Failed to open AI assistant:', e);
-      showToast(`AI 도우미(${service}) 실행 실패: ${e}`);
+  // AI Side Panel bounds synchronizer
+  const syncAiPanelBounds = useCallback(async () => {
+    if (!isAiPanelOpen || !aiViewportRef.current) return;
+    const rect = aiViewportRef.current.getBoundingClientRect();
+    if (rect.width > 20 && rect.height > 20) {
+      await tauriApi.updateAiPanelBounds({
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      }).catch(console.error);
     }
+  }, [isAiPanelOpen]);
+
+  // Manage AI Side Panel visibility and URL
+  useEffect(() => {
+    if (!isAiPanelOpen) {
+      tauriApi.hideAiPanel().catch(console.error);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      if (!aiViewportRef.current) return;
+      const rect = aiViewportRef.current.getBoundingClientRect();
+      const customUrl = activeAiService === 'enterprise'
+        ? settings.aiUrls?.enterprise
+        : settings.aiUrls?.[activeAiService];
+
+      await tauriApi.showAiPanel({
+        service: activeAiService,
+        customUrl,
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      }).catch(console.error);
+    }, 40);
+
+    return () => clearTimeout(timer);
+  }, [isAiPanelOpen, activeAiService, settings.aiUrls]);
+
+  // Keep AI Side Panel bounds in sync on window resize & viewport resize
+  useEffect(() => {
+    if (!isAiPanelOpen || !aiViewportRef.current) return;
+    const observer = new ResizeObserver(() => {
+      syncAiPanelBounds();
+    });
+    observer.observe(aiViewportRef.current);
+    window.addEventListener('resize', syncAiPanelBounds);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncAiPanelBounds);
+    };
+  }, [isAiPanelOpen, syncAiPanelBounds]);
+
+  useEffect(() => {
+    syncAiPanelBounds();
+  }, [isSidebarOpen, sidebarWidth, syncAiPanelBounds]);
+
+  const handleAiPanelWidthChange = (newWidth: number) => {
+    setAiPanelWidth(newWidth);
+    try {
+      localStorage.setItem('geditor_ai_panel_width', String(newWidth));
+    } catch (e) {}
+    syncAiPanelBounds();
+  };
+
+  const handleOpenAiAssistant = useCallback((service: 'gemini' | 'chatgpt' | 'claude' | 'enterprise' = 'gemini') => {
+    setActiveAiService(service);
+    setIsAiPanelOpen(true);
   }, []);
 
-  const handleToggleAiAssistant = useCallback(async (service?: string) => {
-    try {
-      const opened = await tauriApi.toggleAiAssistant(service);
-      if (opened) {
-        showToast('🤖 AI 도우미 창이 열렸습니다.');
-      }
-    } catch (e) {
-      console.error('Failed to toggle AI assistant:', e);
+  const handleToggleAiAssistant = useCallback((service?: string) => {
+    if (service && (service === 'gemini' || service === 'chatgpt' || service === 'claude' || service === 'enterprise')) {
+      setActiveAiService(service);
+      setIsAiPanelOpen(true);
+      return;
     }
+    setIsAiPanelOpen((prev) => !prev);
   }, []);
 
   const handleSnapAiAssistant = useCallback(async () => {
@@ -849,11 +922,42 @@ export default function App() {
     }
   }, [isAiAlwaysOnTop]);
 
+  const handlePopOutAiWindow = useCallback(async () => {
+    setIsAiPanelOpen(false);
+    await tauriApi.hideAiPanel().catch(console.error);
+    const customUrl = activeAiService === 'enterprise'
+      ? settings.aiUrls?.enterprise
+      : settings.aiUrls?.[activeAiService];
+    await tauriApi.openAiAssistant(activeAiService, customUrl, false).catch(console.error);
+    showToast('↗ AI 도우미가 독립 창으로 분리되었습니다.');
+  }, [activeAiService, settings.aiUrls]);
+
+  // Paste selected AI text into active document ("선택영역 본문붙혀넣기")
+  const handlePasteAiSelectionToEditor = useCallback(async () => {
+    try {
+      let text = await tauriApi.getAiSelectedText().catch(() => '');
+      if (!text || !text.trim()) {
+        text = await tauriApi.readClipboard().catch(() => '');
+      }
+
+      if (!text || !text.trim()) {
+        showToast('💡 AI 화면에서 본문에 넣을 텍스트나 코드를 마우스로 드래그하여 선택한 후 버튼을 눌러주세요.');
+        return;
+      }
+
+      window.dispatchEvent(new CustomEvent('geditor-insert-text', { detail: { text } }));
+    } catch (err) {
+      console.error('Failed to paste AI selection:', err);
+      showToast(`본문 붙여넣기 실패: ${err}`);
+    }
+  }, []);
+
   const handleSmartInsertAiCode = useCallback(() => {
     window.dispatchEvent(new CustomEvent('geditor-smart-insert-ai'));
   }, []);
 
   const handleAskAiWithSelection = useCallback(() => {
+    setIsAiPanelOpen(true);
     window.dispatchEvent(new CustomEvent('geditor-ask-ai'));
   }, []);
 
@@ -1197,6 +1301,22 @@ export default function App() {
             />
           </div>
         </div>
+
+        {/* AI Side Panel */}
+        <AiSidePanel
+          isOpen={isAiPanelOpen}
+          isLight={isLight}
+          width={aiPanelWidth}
+          settings={settings}
+          activeService={activeAiService}
+          onChangeService={(svc) => setActiveAiService(svc)}
+          onPasteSelectedToEditor={handlePasteAiSelectionToEditor}
+          onReload={() => tauriApi.reloadAiPanel().catch(console.error)}
+          onPopOutToWindow={handlePopOutAiWindow}
+          onClose={() => setIsAiPanelOpen(false)}
+          onWidthChange={handleAiPanelWidthChange}
+          viewportRef={aiViewportRef}
+        />
       </div>
 
       {/* Bottom Status Bar */}

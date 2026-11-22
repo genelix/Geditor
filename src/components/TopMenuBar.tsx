@@ -19,6 +19,7 @@ import {
   Brain,
   ClipboardPaste,
   LogOut,
+  Building2,
 } from 'lucide-react';
 
 interface TopMenuBarProps {
@@ -38,7 +39,7 @@ interface TopMenuBarProps {
   onOpenSettings: () => void;
   onUpdateSettings: (settings: EditorSettings) => void;
   onOpenPreviewSplit?: () => void;
-  onOpenAiAssistant?: (service: 'gemini' | 'chatgpt' | 'claude') => void;
+  onOpenAiAssistant?: (service: 'gemini' | 'chatgpt' | 'claude' | 'enterprise') => void;
   onToggleAiAssistant?: () => void;
   onSnapAiAssistant?: () => void;
   onToggleAiAlwaysOnTop?: () => void;
@@ -500,6 +501,21 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               </div>
               <span style={{ fontSize: '10px', color: '#d97706', fontWeight: 500 }}>웹인증</span>
             </div>
+
+            {settings.aiUrls?.enterprise?.trim() && (
+              <div
+                style={dropdownItemStyle}
+                onClick={() => executeAction(() => onOpenAiAssistant?.('enterprise'))}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Building2 size={14} color="#f59e0b" />
+                  <span>사내 엔터프라이즈 AI 열기</span>
+                </div>
+                <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 500 }}>사내망</span>
+              </div>
+            )}
 
             <div style={separatorStyle} />
 
