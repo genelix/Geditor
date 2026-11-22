@@ -297,3 +297,20 @@ pub fn open_file_dialog(default_dir: Option<String>) -> Option<String> {
     dialog.pick_file().map(|p| p.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+pub fn open_folder_dialog(default_dir: Option<String>) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(ref dir) = default_dir {
+        let p = Path::new(dir);
+        if p.exists() {
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            } else if let Some(parent) = p.parent() {
+                dialog = dialog.set_directory(parent);
+            }
+        }
+    }
+    dialog.pick_folder().map(|p| p.to_string_lossy().to_string())
+}
+
+

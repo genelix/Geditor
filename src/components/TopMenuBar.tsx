@@ -13,6 +13,7 @@ import {
   Sparkles,
   HelpCircle,
   FolderTree,
+  Folder,
 } from 'lucide-react';
 
 interface TopMenuBarProps {
@@ -20,6 +21,7 @@ interface TopMenuBarProps {
   settings: EditorSettings;
   onNewFile: () => void;
   onOpenFilePrompt?: () => void;
+  onOpenFolderPrompt?: () => void;
   onSaveFile: () => void;
   onSaveAsFile?: () => void;
   onCloseTab: () => void;
@@ -39,6 +41,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   settings,
   onNewFile,
   onOpenFilePrompt,
+  onOpenFolderPrompt,
   onSaveFile,
   onSaveAsFile,
   onCloseTab,
@@ -192,6 +195,21 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                   <span>파일 열기...</span>
                 </div>
                 <span style={shortcutStyle}>⌘O</span>
+              </div>
+            )}
+
+            {onOpenFolderPrompt && (
+              <div
+                style={dropdownItemStyle}
+                onClick={() => executeAction(onOpenFolderPrompt)}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isLight ? '#f4f4f5' : '#2e2e34')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Folder size={14} />
+                  <span>폴더 열기...</span>
+                </div>
+                <span style={shortcutStyle}>⇧⌘O</span>
               </div>
             )}
 

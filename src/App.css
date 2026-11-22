@@ -36,7 +36,8 @@ body,
 }
 
 /* File tree hover actions */
-div:hover > .file-hover-action {
+div:hover > .file-hover-action,
+div:hover > div > .file-hover-action {
   display: block !important;
 }
 

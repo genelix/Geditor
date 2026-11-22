@@ -248,6 +248,30 @@ export default function App() {
     }
   };
 
+  // Change workspace directory
+  const handleChangeWorkspace = async (newPath: string) => {
+    try {
+      const items = await tauriApi.listDirectory(newPath);
+      setWorkspacePath(newPath);
+      setFiles(items);
+      showToast(`워크스페이스를 변경했습니다: ${newPath}`);
+    } catch (err) {
+      showToast(`워크스페이스 열기 실패: ${err}`);
+    }
+  };
+
+  // Open folder prompt using native OS dialog
+  const handleOpenFolderPrompt = async () => {
+    try {
+      const chosen = await tauriApi.openFolderDialog(workspacePath);
+      if (chosen) {
+        handleChangeWorkspace(chosen);
+      }
+    } catch (err) {
+      showToast(`폴더 열기 실패: ${err}`);
+    }
+  };
+
   // Save current active tab
   const handleSaveActiveTab = async () => {
     const current = tabs.find((t) => t.id === activeTabId);
@@ -638,7 +662,10 @@ export default function App() {
       } else if (isMeta && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         handleSaveActiveTab();
-      } else if (isMeta && (e.key === 'o' || e.key === 'O')) {
+      } else if (isMeta && e.shiftKey && (e.key === 'o' || e.key === 'O')) {
+        e.preventDefault();
+        handleOpenFolderPrompt();
+      } else if (isMeta && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
         e.preventDefault();
         handleOpenFilePrompt();
       } else if (isMeta && e.key === 'n') {
@@ -671,7 +698,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt]);
+  }, [activeTabId, activePaneId, tabs, panes, workspacePath, handleOpenPreviewSplit, handleSaveActiveTab, handleSaveAsActiveTab, handleOpenFilePrompt, handleOpenFolderPrompt]);
 
   // Listen to native macOS menu events
   useEffect(() => {
@@ -798,6 +825,7 @@ export default function App() {
         settings={settings}
         onNewFile={handleNewTab}
         onOpenFilePrompt={handleOpenFilePrompt}
+        onOpenFolderPrompt={handleOpenFolderPrompt}
         onSaveFile={handleSaveActiveTab}
         onSaveAsFile={handleSaveAsActiveTab}
         onCloseTab={() => {
@@ -829,6 +857,7 @@ export default function App() {
             onOpenFile={handleOpenFile}
             onRefreshWorkspace={() => refreshWorkspace()}
             onSelectSearchResult={(match: SearchMatch) => handleOpenFile(match.file_path)}
+            onChangeWorkspace={handleChangeWorkspace}
           />
         )}
 

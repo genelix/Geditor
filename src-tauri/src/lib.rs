@@ -151,6 +151,7 @@ pub fn run() {
             fs_cmd::inspect_path,
             fs_cmd::save_file_dialog,
             fs_cmd::open_file_dialog,
+            fs_cmd::open_folder_dialog,
             search_cmd::search_in_files,
             pty_cmd::terminal_spawn,
             pty_cmd::terminal_write,

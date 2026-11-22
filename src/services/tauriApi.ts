@@ -56,6 +56,10 @@ export const tauriApi = {
     return await invoke<string | null>('open_file_dialog', { defaultDir });
   },
 
+  openFolderDialog: async (defaultDir?: string): Promise<string | null> => {
+    return await invoke<string | null>('open_folder_dialog', { defaultDir });
+  },
+
   // Search
   searchInFiles: async (
     rootPath: string,
