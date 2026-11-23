@@ -500,6 +500,32 @@ export default function App() {
     }
   };
 
+  // Handle file deleted from sidebar
+  const handleFileDeleted = useCallback((deletedPath: string) => {
+    setTabs((currentTabs) => {
+      const remaining = currentTabs.filter(
+        (t) => t.path !== deletedPath && !t.path.startsWith(deletedPath + '/')
+      );
+      if (remaining.length === 0) {
+        const fallbackTab: TabItem = {
+          id: `tab-${Date.now()}`,
+          name: '새문서.md',
+          path: '',
+          content: '',
+          savedContent: '',
+          isDirty: false,
+          encoding: 'UTF-8',
+          lineEnding: 'LF',
+          language: 'markdown',
+          viewMode: 'edit',
+        };
+        setActiveTabId(fallbackTab.id);
+        return [fallbackTab];
+      }
+      return remaining;
+    });
+  }, []);
+
   // Open file prompt using native OS dialog
   const handleOpenFilePrompt = async () => {
     try {
@@ -1326,6 +1352,7 @@ export default function App() {
             onRefreshWorkspace={refreshWorkspace}
             onSelectSearchResult={(match: SearchMatch) => handleOpenFile(match.file_path)}
             onChangeWorkspace={handleChangeWorkspace}
+            onDeleteFile={handleFileDeleted}
           />
         )}
 

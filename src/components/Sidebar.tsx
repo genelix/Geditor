@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Folder,
   FolderOpen,
@@ -25,6 +25,7 @@ import {
   StarOff,
   X,
   FolderUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { FileNode, SearchMatch } from '../types';
 import { tauriApi, isSupportedTextFile } from '../services/tauriApi';
@@ -67,6 +68,7 @@ interface SidebarProps {
   onRefreshWorkspace: () => Promise<void> | void;
   onSelectSearchResult: (match: SearchMatch) => void;
   onChangeWorkspace?: (path: string) => Promise<void> | void;
+  onDeleteFile?: (path: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -79,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRefreshWorkspace,
   onSelectSearchResult,
   onChangeWorkspace,
+  onDeleteFile,
 }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'search'>('files');
 
@@ -123,6 +126,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
     isFavoriteItem?: boolean;
     favoritePath?: string;
   } | null>(null);
+
+  // Delete Confirmation Modal State
+  const [deleteTarget, setDeleteTarget] = useState<{
+    path: string;
+    name: string;
+    isDir: boolean;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Rename Modal State
+  const [renameTarget, setRenameTarget] = useState<{
+    path: string;
+    name: string;
+    isDir: boolean;
+  } | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  // Toast message state
+  const [toastMessage, setToastMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  const showToast = (text: string, isError = false) => {
+    setToastMessage({ text, isError });
+    setTimeout(() => {
+      setToastMessage((cur) => (cur?.text === text ? null : cur));
+    }, 3500);
+  };
+
+  // Delete / Backspace key listener on selectedPath
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+
+      if (deleteTarget || renameTarget || creatingType) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPath) {
+        e.preventDefault();
+        const itemName = selectedPath.split('/').pop() || selectedPath;
+        const isDir = !!expandedFolders[selectedPath] || favoriteFolders.includes(selectedPath);
+        setDeleteTarget({ path: selectedPath, name: itemName, isDir });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPath, deleteTarget, renameTarget, creatingType, expandedFolders, favoriteFolders]);
 
   // Parent directory calculations for Go To Parent Folder button
   const normalizedWorkspace = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -181,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         });
       }
     } catch (err) {
-      alert(`폴더 추가 실패: ${err}`);
+      showToast(`폴더 추가 실패: ${err}`, true);
     }
   };
 
@@ -331,65 +381,90 @@ export const Sidebar: React.FC<SidebarProps> = ({
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }, 150);
     } catch (e) {
-      alert(`생성 중 오류 발생: ${e}`);
+      showToast(`생성 중 오류 발생: ${e}`, true);
     }
   };
 
-  const handleDeleteEntry = async (path: string, e?: React.MouseEvent) => {
+  const handleRequestDelete = (path: string, name?: string, isDir = false, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const itemName = path.split('/').pop();
-    if (confirm(`정말로 "${itemName}" 항목을 삭제하시겠습니까?`)) {
-      try {
-        await tauriApi.deleteEntry(path);
+    const itemName = name || path.split('/').pop() || path;
+    setDeleteTarget({ path, name: itemName, isDir });
+  };
 
-        // Remove from expandedFolders
-        setExpandedFolders((prev) => {
-          const next = { ...prev };
-          delete next[path];
-          Object.keys(next).forEach((k) => {
-            if (k.startsWith(path + '/')) {
-              delete next[k];
-            }
-          });
-          return next;
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    const targetPath = deleteTarget.path;
+    const targetName = deleteTarget.name;
+    try {
+      await tauriApi.deleteEntry(targetPath);
+
+      // Remove from expandedFolders
+      setExpandedFolders((prev) => {
+        const next = { ...prev };
+        delete next[targetPath];
+        Object.keys(next).forEach((k) => {
+          if (k.startsWith(targetPath + '/')) {
+            delete next[k];
+          }
         });
+        return next;
+      });
 
-        // Remove from favoriteFolders if present
-        setFavoriteFolders((prev) => {
-          const next = prev.filter((p) => p !== path && !p.startsWith(path + '/'));
-          try {
-            localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
-          } catch (e) {}
-          return next;
-        });
+      // Remove from favoriteFolders if present
+      setFavoriteFolders((prev) => {
+        const next = prev.filter((p) => p !== targetPath && !p.startsWith(targetPath + '/'));
+        try {
+          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
 
-        await handleFullRefresh();
-      } catch (err) {
-        alert(`삭제 실패: ${err}`);
+      if (onDeleteFile) {
+        onDeleteFile(targetPath);
       }
+
+      await handleFullRefresh();
+      setDeleteTarget(null);
+      showToast(`"${targetName}" 항목이 삭제되었습니다.`);
+    } catch (err) {
+      console.error('삭제 실패:', err);
+      showToast(`삭제 실패: ${err}`, true);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleRenameEntry = async (item: FileNode) => {
-    const newName = window.prompt(`"${item.name}"의 새 이름을 입력하세요:`, item.name);
-    if (!newName || !newName.trim() || newName.trim() === item.name) return;
-    const lastSlash = item.path.lastIndexOf('/');
-    const parentDir = lastSlash !== -1 ? item.path.substring(0, lastSlash) : workspacePath;
-    const newPath = `${parentDir}/${newName.trim()}`;
+  const handleRequestRename = (item: FileNode) => {
+    setRenameTarget({ path: item.path, name: item.name, isDir: item.is_dir });
+    setRenameInput(item.name);
+  };
+
+  const handleConfirmRename = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameInput.trim();
+    if (!trimmed || trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
+    setIsRenaming(true);
+    const lastSlash = renameTarget.path.lastIndexOf('/');
+    const parentDir = lastSlash !== -1 ? renameTarget.path.substring(0, lastSlash) : workspacePath;
+    const newPath = `${parentDir}/${trimmed}`;
     try {
-      await tauriApi.renameEntry(item.path, newPath);
+      await tauriApi.renameEntry(renameTarget.path, newPath);
 
       setExpandedFolders((prev) => {
         const next = { ...prev };
-        if (next[item.path]) {
-          next[newPath] = next[item.path];
-          delete next[item.path];
+        if (next[renameTarget.path]) {
+          next[newPath] = next[renameTarget.path];
+          delete next[renameTarget.path];
         }
         return next;
       });
 
       setFavoriteFolders((prev) => {
-        const next = prev.map((p) => (p === item.path ? newPath : p));
+        const next = prev.map((p) => (p === renameTarget.path ? newPath : p));
         try {
           localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
         } catch (e) {}
@@ -398,8 +473,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       await handleFullRefresh();
       setSelectedPath(newPath);
+      setRenameTarget(null);
+      showToast(`이름이 "${trimmed}"(으)로 변경되었습니다.`);
     } catch (err) {
-      alert(`이름 변경 실패: ${err}`);
+      console.error('이름 변경 실패:', err);
+      showToast(`이름 변경 실패: ${err}`, true);
+    } finally {
+      setIsRenaming(false);
     }
   };
 
@@ -415,7 +495,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       );
       setSearchResults(results);
     } catch (err) {
-      alert(`검색 중 오류: ${err}`);
+      showToast(`검색 중 오류: ${err}`, true);
     } finally {
       setIsSearching(false);
     }
@@ -637,7 +717,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           label: '이름 바꾸기...',
           icon: <Edit2 size={14} />,
-          onClick: () => handleRenameEntry(item),
+          onClick: () => handleRequestRename(item),
         },
         {
           label: '전체 경로 복사',
@@ -655,7 +735,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: '삭제',
           icon: <Trash2 size={14} />,
           danger: true,
-          onClick: () => handleDeleteEntry(item.path),
+          onClick: () => handleRequestDelete(item.path, item.name, true),
         },
       ];
     }
@@ -671,7 +751,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {
         label: '이름 바꾸기...',
         icon: <Edit2 size={14} />,
-        onClick: () => handleRenameEntry(item),
+        onClick: () => handleRequestRename(item),
       },
       {
         label: '전체 경로 복사',
@@ -688,7 +768,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         label: '삭제',
         icon: <Trash2 size={14} />,
         danger: true,
-        onClick: () => handleDeleteEntry(item.path),
+        onClick: () => handleRequestDelete(item.path, item.name, false),
       },
     ];
   }, [contextMenu, workspacePath, favoriteFolders, handleFullRefresh, onOpenFile, onChangeWorkspace]);
@@ -816,7 +896,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
 
               <button
-                onClick={(e) => handleDeleteEntry(item.path, e)}
+                onClick={(e) => handleRequestDelete(item.path, item.name, item.is_dir, e)}
                 style={{
                   border: 'none',
                   background: 'transparent',
@@ -1466,6 +1546,398 @@ export const Sidebar: React.FC<SidebarProps> = ({
           items={contextMenuItems}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            backdropFilter: 'blur(3px)',
+          }}
+          onClick={() => !isDeleting && setDeleteTarget(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '420px',
+              maxWidth: '92vw',
+              backgroundColor: isLight ? '#ffffff' : '#1e1e24',
+              color: isLight ? '#18181b' : '#f4f4f5',
+              borderRadius: '10px',
+              border: isLight ? '1px solid #e4e4e7' : '1px solid #3f3f46',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              animation: 'geditorFadeIn 0.15s ease-out',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 18px',
+                borderBottom: isLight ? '1px solid #f4f4f5' : '1px solid #27272a',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ef4444',
+                  }}
+                >
+                  <Trash2 size={16} />
+                </div>
+                <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                  {deleteTarget.isDir ? '폴더 삭제 확인' : '파일 삭제 확인'}
+                </span>
+              </div>
+              <button
+                onClick={() => !isDeleting && setDeleteTarget(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: isLight ? '#71717a' : '#a1a1aa',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                정말로 <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>"{deleteTarget.name}"</strong> 항목을 삭제하시겠습니까?
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: '#ef4444',
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                <span>
+                  {deleteTarget.isDir
+                    ? '폴더 및 폴더 내의 모든 파일이 영구 삭제되며 복구할 수 없습니다.'
+                    : '삭제된 파일은 영구적으로 제거되며 복구할 수 없습니다.'}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: isLight ? '#71717a' : '#a1a1aa',
+                  backgroundColor: isLight ? '#f4f4f5' : '#141416',
+                  padding: '6px 10px',
+                  borderRadius: '4px',
+                  border: isLight ? '1px solid #e4e4e7' : '1px solid #27272a',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {deleteTarget.path}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                padding: '12px 18px',
+                backgroundColor: isLight ? '#f9fafb' : '#16161a',
+                borderTop: isLight ? '1px solid #f4f4f5' : '1px solid #27272a',
+              }}
+            >
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '5px',
+                  border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#3f3f46' : '#d4d4d8',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                취소 (Esc)
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                autoFocus
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
+                }}
+              >
+                {isDeleting ? '삭제 중...' : '삭제 (Enter)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Modal */}
+      {renameTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            backdropFilter: 'blur(3px)',
+          }}
+          onClick={() => !isRenaming && setRenameTarget(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '400px',
+              maxWidth: '92vw',
+              backgroundColor: isLight ? '#ffffff' : '#1e1e24',
+              color: isLight ? '#18181b' : '#f4f4f5',
+              borderRadius: '10px',
+              border: isLight ? '1px solid #e4e4e7' : '1px solid #3f3f46',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              animation: 'geditorFadeIn 0.15s ease-out',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 18px',
+                borderBottom: isLight ? '1px solid #f4f4f5' : '1px solid #27272a',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#38bdf8',
+                  }}
+                >
+                  <Edit2 size={16} />
+                </div>
+                <span style={{ fontWeight: 600, fontSize: '14px' }}>이름 바꾸기</span>
+              </div>
+              <button
+                onClick={() => !isRenaming && setRenameTarget(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: isLight ? '#71717a' : '#a1a1aa',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '16px 18px' }}>
+              <input
+                type="text"
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleConfirmRename();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setRenameTarget(null);
+                  }
+                }}
+                autoFocus
+                onFocus={(e) => {
+                  const dotIdx = renameInput.lastIndexOf('.');
+                  if (dotIdx > 0 && !renameTarget.isDir) {
+                    e.target.setSelectionRange(0, dotIdx);
+                  } else {
+                    e.target.select();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '13px',
+                  borderRadius: '6px',
+                  border: '1px solid #38bdf8',
+                  outline: 'none',
+                  backgroundColor: isLight ? '#ffffff' : '#141416',
+                  color: isLight ? '#18181b' : '#f4f4f5',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                padding: '12px 18px',
+                backgroundColor: isLight ? '#f9fafb' : '#16161a',
+                borderTop: isLight ? '1px solid #f4f4f5' : '1px solid #27272a',
+              }}
+            >
+              <button
+                type="button"
+                disabled={isRenaming}
+                onClick={() => setRenameTarget(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '5px',
+                  border: isLight ? '1px solid #d4d4d8' : '1px solid #3f3f46',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#3f3f46' : '#d4d4d8',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: isRenaming ? 'not-allowed' : 'pointer',
+                }}
+              >
+                취소 (Esc)
+              </button>
+              <button
+                type="button"
+                disabled={isRenaming || !renameInput.trim()}
+                onClick={handleConfirmRename}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  backgroundColor: '#0284c7',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: isRenaming || !renameInput.trim() ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                {isRenaming ? '변경 중...' : '확인 (Enter)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '16px',
+            left: '12px',
+            right: '12px',
+            padding: '8px 12px',
+            backgroundColor: toastMessage.isError ? '#ef4444' : '#10b981',
+            color: '#ffffff',
+            borderRadius: '6px',
+            fontSize: '12px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            animation: 'geditorFadeIn 0.15s ease-out',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {toastMessage.text}
+          </span>
+          <button
+            onClick={() => setToastMessage(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#ffffff',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
       )}
     </div>
   );

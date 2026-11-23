@@ -2,6 +2,12 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
+// Enable GFM and soft line breaks so markdown matches editor line breaks exactly
+marked.use({
+  breaks: true,
+  gfm: true,
+});
+
 export interface CursorLineInfo {
   line: number;
   totalLines: number;
@@ -30,7 +36,11 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
 
   const htmlContent = useMemo(() => {
     try {
-      const rawHtml = marked.parse(content || '', { async: false }) as string;
+      const rawHtml = marked.parse(content || '', {
+        async: false,
+        breaks: true,
+        gfm: true,
+      }) as string;
       return DOMPurify.sanitize(rawHtml);
     } catch (e) {
       return `<p style="color:red;">마크다운 렌더링 오류: ${e}</p>`;
