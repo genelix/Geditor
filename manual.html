@@ -541,21 +541,22 @@
     <div class="nav-group-title">기본 가이드</div>
     <ul class="nav-list">
       <li class="nav-item"><a href="#intro" class="active">🌟 1. 소개 및 화면 구성</a></li>
-      <li class="nav-item"><a href="#file-ops">📂 2. 파일 & 탐색기 관리</a></li>
-      <li class="nav-item"><a href="#panes">🪟 3. 화면 분할 & 미리보기</a></li>
+      <li class="nav-item"><a href="#file-ops">📂 2. 파일 & 탐색기 & 세션 복원</a></li>
+      <li class="nav-item"><a href="#panes">🪟 3. 화면 분할 & 실시간 위치 연동</a></li>
+      <li class="nav-item"><a href="#markdown-format">✍️ 4. 마크다운 단축키 & 서식 도구</a></li>
     </ul>
 
     <div class="nav-group-title">핵심 & 고급 기능</div>
     <ul class="nav-list">
-      <li class="nav-item"><a href="#ai-assistant">🤖 4. AI 도우미 200% 활용</a></li>
-      <li class="nav-item"><a href="#encoding">🔤 5. 한글 깨짐(인코딩) 해결</a></li>
-      <li class="nav-item"><a href="#settings">⚙️ 6. 환경설정 맞춤 설정</a></li>
-      <li class="nav-item"><a href="#safe-exit">🛡️ 7. 작업 보호 & 안전 종료</a></li>
+      <li class="nav-item"><a href="#ai-assistant">🤖 5. AI 도우미 200% 활용</a></li>
+      <li class="nav-item"><a href="#encoding">🔤 6. 한글 깨짐(인코딩) 해결</a></li>
+      <li class="nav-item"><a href="#settings">⚙️ 7. 환경설정 맞춤 설정</a></li>
+      <li class="nav-item"><a href="#safe-exit">🛡️ 8. 작업 보호 & 안전 종료</a></li>
     </ul>
 
     <div class="nav-group-title">단축키 레퍼런스</div>
     <ul class="nav-list">
-      <li class="nav-item"><a href="#shortcuts">⌨️ 8. 단축키 총정리 (Mac / Win)</a></li>
+      <li class="nav-item"><a href="#shortcuts">⌨️ 9. 단축키 총정리 (Mac / Win)</a></li>
     </ul>
   </aside>
 
@@ -586,26 +587,26 @@
         <div class="ui-diagram-title">💡 Geditor의 주요 화면 영역 한눈에 보기</div>
         <div class="ui-mock-window">
           <div class="ui-mock-topbar">
-            <span style="color:#38bdf8; font-weight:bold;">Geditor — Welcome.md</span>
+            <span style="color:#38bdf8; font-weight:bold;">Geditor — 새문서.md (자동 세션 복원)</span>
             <span style="margin-left:auto; color:#a1a1aa;">파일 | 편집 | 보기 | AI 도우미 | 설정 | 창 | 도움말</span>
           </div>
           <div class="ui-mock-body">
             <div class="ui-mock-sidebar">
               📁 탐색기 (좌측 사이드바)<br>
               ⭐ 즐겨찾기 폴더<br>
-              📄 index.html<br>
+              📄 document.md<br>
               📄 script.py
             </div>
             <div class="ui-mock-editor">
-              📝 Monaco 중앙 편집 영역 (에디터)<br>
-              - 문법 하이라이팅<br>
-              - 실시간 자동 완성<br>
+              📝 Monaco 중앙 편집 영역 (마크다운 기본 지원)<br>
+              - 옵시디언(Obsidian) 호환 단축키<br>
+              - 실시간 자동 완성 및 나란히 보기 연동<br>
               - 화면 좌우 분할
             </div>
           </div>
           <div class="ui-mock-statusbar">
             <span>READY | UTF-8 | LF | Markdown</span>
-            <span>💡 Cmd+S 저장 | Cmd+N 새 파일 | Cmd+B 탐색기</span>
+            <span>💡 Cmd+S 저장 | Cmd+N 새 파일 | ⇧Cmd+B 탐색기 | Cmd+B 굵게</span>
           </div>
         </div>
       </div>
@@ -621,7 +622,7 @@
         </div>
         <div class="card">
           <h4>3. 중앙 편집 영역 (Editor)</h4>
-          <p>VS Code와 동일한 강력한 Monaco Editor 엔진이 탑재되어 자동 완성, 코드 서식, 다중 커서를 완벽하게 지원합니다.</p>
+          <p>VS Code와 동일한 강력한 Monaco Editor 엔진이 탑재되어 자동 완성, 코드 서식, 다중 커서를 완벽하게 지원합니다. 기본 포맷이 마크다운(<code>.md</code>)으로 최적화되어 있습니다.</p>
         </div>
         <div class="card">
           <h4>4. 하단 상태 표시줄 (StatusBar)</h4>
@@ -632,63 +633,72 @@
 
     <!-- Section 2: File Operations -->
     <section id="file-ops">
-      <h3 class="section-title">📂 2. 파일 & 탐색기 관리</h3>
-      <p class="lead">파일을 생성하고 저장하거나 원하는 폴더를 열고 관리하는 방법입니다.</p>
+      <h3 class="section-title">📂 2. 파일 & 탐색기 & 세션 복원</h3>
+      <p class="lead">파일을 생성하고 저장하거나 원하는 폴더를 열고 관리하는 방법입니다. 재실행 시 열려 있던 파일 상태가 그대로 복원됩니다.</p>
 
       <div class="compare-container">
         <!-- Mac Box -->
         <div class="compare-box mac-box">
           <div class="compare-title">🍎 Mac 사용자 메뉴 & 단축키</div>
           <ul style="padding-left:18px; line-height:1.7;">
-            <li><strong>새 파일 만들기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>N</kbd></li>
+            <li><strong>새 파일 만들기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>N</kbd> (기본 <code>.md</code>)</li>
             <li><strong>파일 열기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>파일 열기...</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></li>
             <li><strong>폴더 열기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>폴더 열기...</code> 또는 <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></li>
             <li><strong>저장하기</strong>: 상단 메뉴 <code>파일</code> ➔ <code>저장</code> 또는 <kbd>⌘ Cmd</kbd> + <kbd>S</kbd></li>
-            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>⌘ Cmd</kbd> + <kbd>B</kbd></li>
+            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>B</kbd></li>
           </ul>
         </div>
         <!-- Win Box -->
         <div class="compare-box win-box">
           <div class="compare-title">🪟 Windows 사용자 메뉴 & 단축키</div>
           <ul style="padding-left:18px; line-height:1.7;">
-            <li><strong>새 파일 만들기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>Ctrl</kbd> + <kbd>N</kbd></li>
+            <li><strong>새 파일 만들기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>새 파일</code> 또는 <kbd>Ctrl</kbd> + <kbd>N</kbd> (기본 <code>.md</code>)</li>
             <li><strong>파일 열기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>파일 열기...</code> 또는 <kbd>Ctrl</kbd> + <kbd>O</kbd></li>
             <li><strong>폴더 열기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>폴더 열기...</code> 또는 <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>O</kbd></li>
             <li><strong>저장하기</strong>: 창 상단 메뉴 <code>파일</code> ➔ <code>저장</code> 또는 <kbd>Ctrl</kbd> + <kbd>S</kbd></li>
-            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>Ctrl</kbd> + <kbd>B</kbd></li>
+            <li><strong>탐색기 숨기기/보이기</strong>: <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>B</kbd></li>
           </ul>
         </div>
       </div>
 
-      <div class="callout tip">
-        <span>💡</span>
-        <div>
-          <strong>폴더 즐겨찾기(Favorites) 기능</strong><br>
-          좌측 탐색기 상단의 <strong>⭐ 즐겨찾기</strong> 영역 옆의 <code>+</code> 버튼을 누르면 원하는 폴더를 바로 등록할 수 있습니다. 등록된 폴더를 클릭하면 전체 폴더 트리가 유지되면서 해당 위치로 즉시 스크롤 이동합니다.
+      <div class="card-grid">
+        <div class="card">
+          <h4>🔄 자동 세션 복원 (Session Restore)</h4>
+          <p>
+            에디터를 닫았다가 다시 열어도 <strong>작업 중이던 파일 탭들, 활성 탭, 나란히 보기 분할 창, 작업 폴더</strong>가 그대로 복원됩니다.<br>
+            초기 웰컴(Welcome.md) 페이지 없이 바로 직전 작업으로 복귀하며, 이전 세션이 없을 때는 깔끔한 <code>새문서.md</code>가 열립니다.
+          </p>
+        </div>
+        <div class="card">
+          <h4>⭐ 폴더 즐겨찾기 (Favorites)</h4>
+          <p>
+            좌측 탐색기 상단의 <strong>⭐ 즐겨찾기</strong> 영역 옆의 <code>+</code> 버튼을 누르면 원하는 프로젝트 폴더를 바로 등록할 수 있습니다. 클릭 한 번으로 해당 폴더 트리 위치로 즉시 스크롤 이동합니다.
+          </p>
         </div>
       </div>
     </section>
 
     <!-- Section 3: Panes & Preview -->
     <section id="panes">
-      <h3 class="section-title">🪟 3. 화면 분할 & 실시간 미리보기</h3>
+      <h3 class="section-title">🪟 3. 화면 분할 & 실시간 위치 연동 미리보기</h3>
       <p class="lead">한 화면에서 코드를 작성하면서 결과 화면이나 터미널을 나란히 띄워두고 작업할 수 있습니다.</p>
 
       <ul class="step-list">
+        <li class="step-item">
+          <h5>마크다운 실시간 나란히 보기 & 커서 위치 자동 연동 (Split View & Sync Scroll)</h5>
+          <p>
+            마크다운(<code>.md</code>) 문서를 작성할 때 우측에 예쁘게 렌더링된 결과를 실시간으로 확인합니다.<br>
+            <span class="os-badge mac">🍎 Mac</span> <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>V</kbd> &nbsp;|&nbsp;
+            <span class="os-badge win">🪟 Windows</span> <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd><br>
+            <strong>💡 커서 위치 자동 추적</strong>: 왼쪽 에디터에서 글을 쓰거나 화살표 키로 이동하면, 오른쪽 렌더링 화면이 커서가 위치한 단락이나 제목(Heading)을 실시간으로 감지하여 동일한 위치로 부드럽게 스크롤 동기화됩니다.
+          </p>
+        </li>
         <li class="step-item">
           <h5>화면 우측 분할 (Split Panes)</h5>
           <p>
             현재 열려 있는 편집 화면을 우측으로 반분할하여 두 파일을 동시에 비교하며 편집할 수 있습니다.<br>
             <span class="os-badge mac">🍎 Mac</span> <kbd>⌘ Cmd</kbd> + <kbd>\</kbd> &nbsp;|&nbsp;
             <span class="os-badge win">🪟 Windows</span> <kbd>Ctrl</kbd> + <kbd>\</kbd>
-          </p>
-        </li>
-        <li class="step-item">
-          <h5>마크다운 실시간 나란히 보기 (Dual View)</h5>
-          <p>
-            마크다운(<code>.md</code>) 문서를 작성할 때 우측에 예쁘게 렌더링된 결과를 실시간으로 확인합니다.<br>
-            <span class="os-badge mac">🍎 Mac</span> <kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>V</kbd> &nbsp;|&nbsp;
-            <span class="os-badge win">🪟 Windows</span> <kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd>
           </p>
         </li>
         <li class="step-item">
@@ -708,9 +718,65 @@
       </ul>
     </section>
 
-    <!-- Section 4: AI Assistant -->
+    <!-- Section 4: Markdown Formatting & Obsidian Shortcuts -->
+    <section id="markdown-format">
+      <h3 class="section-title">✍️ 4. 마크다운 포맷팅 & 옵시디언 단축키</h3>
+      <p class="lead">
+        옵시디언(Obsidian) 등 대중적인 마크다운 편집기 표준 단축키를 그대로 사용할 수 있습니다. 단축키뿐만 아니라 에디터 상단의 빠른 서식 도구 모음(Quick Format Toolbar) 버튼으로도 서식을 1초 만에 적용할 수 있습니다.
+      </p>
+
+      <div class="card-grid">
+        <div class="card">
+          <h4>굵게 & 기울임 & 취소선</h4>
+          <p>
+            <strong>굵게 (Bold)</strong>: <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>B</kbd> ➔ <code>**텍스트**</code><br>
+            <strong>기울임 (Italic)</strong>: <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>I</kbd> ➔ <code>*텍스트*</code><br>
+            <strong>취소선 (Strikethrough)</strong>: <kbd>⇧⌘X</kbd> / <kbd>Ctrl+Shift+X</kbd> (또는 <code>⇧⌘S</code>) ➔ <code>~~텍스트~~</code><br>
+            <em>* 이미 서식이 적용된 상태에서 누르면 자동으로 서식이 해제(unwrap)됩니다.</em>
+          </p>
+        </div>
+        <div class="card">
+          <h4>코드 & 코드 블록</h4>
+          <p>
+            <strong>인라인 코드</strong>: <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>E</kbd> ➔ <code>`코드`</code><br>
+            <strong>코드 블록 (Code Block)</strong>: <kbd>⇧⌘C</kbd> / <kbd>Ctrl+Shift+C</kbd> ➔ <code>```언어 ... ```</code>
+          </p>
+        </div>
+        <div class="card">
+          <h4>스마트 링크 삽입</h4>
+          <p>
+            <strong>링크 (Link)</strong>: <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd> ➔ <code>[선택텍스트](URL)</code><br>
+            클립보드에 웹 주소(http/https)가 복사되어 있으면 URL 자리에 자동으로 삽입됩니다.
+          </p>
+        </div>
+        <div class="card">
+          <h4>제목 (Heading 1~6)</h4>
+          <p>
+            <strong>제목 순환</strong>: <kbd>⇧⌘H</kbd> / <kbd>Ctrl+Shift+H</kbd> (누를 때마다 <code>#</code> ➔ <code>##</code> ➔ <code>###</code> 순환)<br>
+            <strong>직접 레벨 지정</strong>: <kbd>⌘1</kbd>~<kbd>⌘6</kbd> / <kbd>Ctrl+1</kbd>~<kbd>6</kbd>
+          </p>
+        </div>
+        <div class="card">
+          <h4>목록 & 인용구 & 체크박스</h4>
+          <p>
+            <strong>글머리 목록</strong>: <kbd>⇧⌘U</kbd> / <kbd>Ctrl+Shift+U</kbd> ➔ <code>- 목록</code><br>
+            <strong>번호 매기기</strong>: <kbd>⇧⌘O</kbd> / <kbd>Ctrl+Shift+O</kbd> ➔ <code>1. 목록</code><br>
+            <strong>인용구 (Quote)</strong>: <kbd>⇧⌘.</kbd> / <kbd>Ctrl+Shift+.</kbd> ➔ <code>&gt; 인용</code><br>
+            <strong>체크박스 할 일</strong>: <kbd>⌘ Enter</kbd> / <kbd>Ctrl+Enter</kbd> ➔ <code>- [ ] </code> ↔ <code>- [x] </code> 상호 전환
+          </p>
+        </div>
+        <div class="card">
+          <h4>에디터 상단 빠른 서식 툴바</h4>
+          <p>
+            마크다운 파일을 편집하거나 나란히 보기 시 상단 헤더에 서식 아이콘 버튼(<code>B</code>, <code>I</code>, <code>S</code>, <code>H</code>, <code>&lt;/&gt;</code>, <code>🔗</code>, <code>•</code>, <code>1.</code>, <code>❝</code>, <code>☑</code>)이 표시되어 마우스 클릭으로도 즉시 서식을 적용할 수 있습니다.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: AI Assistant -->
     <section id="ai-assistant">
-      <h3 class="section-title">🤖 4. 스마트 인공지능(AI) 도우미 200% 활용법</h3>
+      <h3 class="section-title">🤖 5. 스마트 인공지능(AI) 도우미 200% 활용법</h3>
       <p class="lead">
         회사나 보안 환경에서 유료 API 키가 없어도 걱정 없습니다! Geditor는 별도의 API 발급 없이 브라우저 웹 로그인(Google Gemini, ChatGPT, Claude) 방식을 지원하여 자유롭게 질문하고 코드를 자동으로 붙여넣을 수 있습니다.
       </p>
@@ -756,9 +822,9 @@
       </div>
     </section>
 
-    <!-- Section 5: Encoding & Line Endings -->
+    <!-- Section 6: Encoding & Line Endings -->
     <section id="encoding">
-      <h3 class="section-title">🔤 5. 한글 깨짐(인코딩) 및 줄바꿈 해결</h3>
+      <h3 class="section-title">🔤 6. 한글 깨짐(인코딩) 및 줄바꿈 해결</h3>
       <p class="lead">
         오래된 메모장 파일이나 관공서 문서, 전산 시스템 텍스트를 열었을 때 한글이 <code></code>처럼 깨져 보이나요? Geditor에서는 단 한 번의 클릭으로 해결됩니다.
       </p>
@@ -779,9 +845,9 @@
       </div>
     </section>
 
-    <!-- Section 6: Settings -->
+    <!-- Section 7: Settings -->
     <section id="settings">
-      <h3 class="section-title">⚙️ 6. 환경설정 및 맞춤 구성</h3>
+      <h3 class="section-title">⚙️ 7. 환경설정 및 맞춤 구성</h3>
       <p class="lead">
         내 눈에 편안한 테마, 글꼴, 크기 및 작업 속도를 높여주는 자동 저장을 설정할 수 있습니다.<br>
         <span class="os-badge mac">🍎 Mac</span> <kbd>⌘ Cmd</kbd> + <kbd>,</kbd> &nbsp;|&nbsp;
@@ -826,9 +892,9 @@
       </table>
     </section>
 
-    <!-- Section 7: Safe Exit -->
+    <!-- Section 8: Safe Exit -->
     <section id="safe-exit">
-      <h3 class="section-title">🛡️ 7. 작업 보호 & 안전 종료</h3>
+      <h3 class="section-title">🛡️ 8. 작업 보호 & 안전 종료</h3>
       <p class="lead">
         열심히 작성하던 내용을 저장하지 않은 상태에서 실수로 창을 닫아버려도 걱정하지 마세요! Geditor가 소중한 데이터를 안전하게 지켜줍니다.
       </p>
@@ -870,10 +936,10 @@
       </div>
     </section>
 
-    <!-- Section 8: Shortcut Table Reference -->
+    <!-- Section 9: Shortcut Table Reference -->
     <section id="shortcuts">
-      <h3 class="section-title">⌨️ 8. 단축키 총정리 (Mac vs Windows)</h3>
-      <p class="lead">Geditor에서 자주 쓰이는 주요 단축키를 한눈에 비교해 보세요.</p>
+      <h3 class="section-title">⌨️ 9. 단축키 총정리 (Mac vs Windows)</h3>
+      <p class="lead">Geditor에서 자주 쓰이는 주요 단축키와 옵시디언 호환 마크다운 서식 단축키를 한눈에 비교해 보세요.</p>
 
       <table class="data-table">
         <thead>
@@ -881,7 +947,7 @@
             <th>기능 설명</th>
             <th>🍎 Mac 단축키</th>
             <th>🪟 Windows 단축키</th>
-            <th>메뉴 위치</th>
+            <th>메뉴 위치 / 비고</th>
           </tr>
         </thead>
         <tbody>
@@ -892,7 +958,7 @@
             <td>파일 ➔ 저장</td>
           </tr>
           <tr>
-            <td><strong>새 파일 만들기</strong></td>
+            <td><strong>새 파일 만들기 (기본 .md)</strong></td>
             <td><kbd>⌘ Cmd</kbd> + <kbd>N</kbd></td>
             <td><kbd>Ctrl</kbd> + <kbd>N</kbd></td>
             <td>파일 ➔ 새 파일</td>
@@ -917,8 +983,8 @@
           </tr>
           <tr>
             <td><strong>좌측 탐색기 토글</strong></td>
-            <td><kbd>⌘ Cmd</kbd> + <kbd>B</kbd></td>
-            <td><kbd>Ctrl</kbd> + <kbd>B</kbd></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>B</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>B</kbd></td>
             <td>보기 ➔ 탐색기 표시/숨기기</td>
           </tr>
           <tr>
@@ -931,7 +997,7 @@
             <td><strong>마크다운 실시간 듀얼 뷰</strong></td>
             <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>V</kbd></td>
             <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd></td>
-            <td>보기 ➔ 실시간 나란히 보기</td>
+            <td>보기 ➔ 실시간 나란히 보기 (커서 연동)</td>
           </tr>
           <tr>
             <td><strong>내장 터미널 열기</strong></td>
@@ -944,6 +1010,72 @@
             <td><kbd>⌘ Cmd</kbd> + <kbd>,</kbd></td>
             <td><kbd>Ctrl</kbd> + <kbd>,</kbd></td>
             <td>설정 ➔ 환경설정 열기</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 굵게 (Bold)</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>B</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>B</kbd></td>
+            <td>옵시디언 호환 서식 (토글 가능)</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 기울임 (Italic)</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>I</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>I</kbd></td>
+            <td>옵시디언 호환 서식</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 취소선</strong></td>
+            <td><kbd>⇧⌘X</kbd> 또는 <kbd>⇧⌘S</kbd></td>
+            <td><kbd>Ctrl+Shift+X</kbd></td>
+            <td><code>~~취소선~~</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 인라인 코드</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>E</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>E</kbd></td>
+            <td><code>`코드`</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 코드 블록</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>C</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+            <td><code>```코드블록```</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 링크 삽입</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>K</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>K</kbd></td>
+            <td>클립보드 URL 자동 감지</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 제목(Heading) 순환</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>H</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>H</kbd></td>
+            <td># ➔ ## ➔ ### (단축키 <kbd>⌘1</kbd>~<kbd>6</kbd>)</td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 글머리 기호 목록</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>U</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>U</kbd></td>
+            <td><code>- 목록 항목</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 번호 매기기 목록</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>O</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>O</kbd></td>
+            <td><code>1. 목록 항목</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 인용구 (Quote)</strong></td>
+            <td><kbd>⇧ Shift</kbd> + <kbd>⌘ Cmd</kbd> + <kbd>.</kbd></td>
+            <td><kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>.</kbd></td>
+            <td><code>&gt; 인용구</code></td>
+          </tr>
+          <tr>
+            <td><strong>마크다운 체크박스 할 일</strong></td>
+            <td><kbd>⌘ Cmd</kbd> + <kbd>Enter</kbd></td>
+            <td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td>
+            <td><code>- [ ] </code> ↔ <code>- [x] </code> 상호 전환</td>
           </tr>
           <tr>
             <td><strong>AI 도우미 창 열기/닫기</strong></td>

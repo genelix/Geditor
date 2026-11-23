@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { TabItem, PaneItem, PaneType, FileNode, SearchMatch, EditorSettings, DEFAULT_SETTINGS } from './types';
@@ -15,9 +15,97 @@ import { AlertTriangle, X, Sparkles } from 'lucide-react';
 import { extractAiCode } from './utils/aiCodeParser';
 
 const SETTINGS_STORAGE_KEY = 'geditor_settings';
+const SESSION_STORAGE_KEY = 'geditor_saved_session_v1';
+
+interface SavedSession {
+  tabs: TabItem[];
+  activeTabId: string;
+  panes: PaneItem[];
+  activePaneId: string;
+  workspacePath?: string;
+}
+
+const createDefaultBlankTab = (settings?: EditorSettings): TabItem => ({
+  id: `tab-${Date.now()}`,
+  path: '',
+  name: '새문서.md',
+  content: '',
+  savedContent: '',
+  isDirty: false,
+  encoding: settings?.defaultEncoding || 'UTF-8',
+  lineEnding: settings?.defaultLineEnding || 'LF',
+  language: 'markdown',
+  viewMode: 'edit',
+});
+
+const loadSavedSession = (settings?: EditorSettings): SavedSession => {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw) as SavedSession;
+      if (Array.isArray(data.tabs) && data.tabs.length > 0) {
+        // Filter out legacy Welcome.md tab
+        const validTabs = data.tabs.filter(
+          (t) => t.id !== 'tab-welcome' && t.name !== 'Welcome.md'
+        );
+        if (validTabs.length > 0) {
+          const activeTabId = validTabs.some((t) => t.id === data.activeTabId)
+            ? data.activeTabId
+            : validTabs[0].id;
+          const validPanes =
+            Array.isArray(data.panes) && data.panes.length > 0
+              ? data.panes.map((p) => ({
+                  ...p,
+                  tabId: validTabs.some((t) => t.id === p.tabId) ? p.tabId : activeTabId,
+                }))
+              : [
+                  {
+                    id: 'pane-1',
+                    type: 'editor' as PaneType,
+                    title: '편집기',
+                    tabId: activeTabId,
+                  },
+                ];
+
+          return {
+            tabs: validTabs,
+            activeTabId,
+            panes: validPanes,
+            activePaneId: data.activePaneId || validPanes[0].id,
+            workspacePath: data.workspacePath,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load saved session:', e);
+  }
+
+  const defTab = createDefaultBlankTab(settings);
+  return {
+    tabs: [defTab],
+    activeTabId: defTab.id,
+    panes: [{ id: 'pane-1', type: 'editor', title: '편집기', tabId: defTab.id }],
+    activePaneId: 'pane-1',
+  };
+};
 
 export default function App() {
-  const [workspacePath, setWorkspacePath] = useState<string>('');
+  const [settings, setSettings] = useState<EditorSettings>(() => {
+    try {
+      const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (saved) {
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+    return DEFAULT_SETTINGS;
+  });
+
+  const initialSession = useMemo(() => loadSavedSession(settings), []);
+
+  const [workspacePath, setWorkspacePath] = useState<string>(() => initialSession.workspacePath || '');
   const [files, setFiles] = useState<FileNode[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -154,19 +242,6 @@ export default function App() {
     };
   }, []);
 
-  // Settings State with LocalStorage persistence
-  const [settings, setSettings] = useState<EditorSettings>(() => {
-    try {
-      const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
-      if (saved) {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
-      }
-    } catch (e) {
-      console.error('Failed to load settings:', e);
-    }
-    return DEFAULT_SETTINGS;
-  });
-
   const handleUpdateSettings = (newSettings: EditorSettings) => {
     setSettings(newSettings);
     try {
@@ -178,34 +253,55 @@ export default function App() {
 
   const isLight = settings.theme === 'vs';
 
-  // Tabs state
-  const [tabs, setTabs] = useState<TabItem[]>([
-    {
-      id: 'tab-welcome',
-      path: '',
-      name: 'Welcome.md',
-      content: `# Geditor 🚀\n\n**Rust** 초고속 코어 기반의 현대적이고 가벼운 텍스트 에디터입니다.\n\n### 🌟 주요 기능\n- **초고속 Rust 코어**: 파일 I/O, 정규식 전역 검색, 한글 인코딩(UTF-8, EUC-KR) 자동 감지\n- **다중 패널 및 화면 분할**: 에디터, 내장 터미널, 마크다운 미리보기를 자유롭게 분할\n- **네이티브 터미널 (zsh)**: \`portable-pty\` 기반의 인터랙티브 macOS zsh 셸 내장\n- **풍부한 코드 문법 지원**: Python, JS, TS, HTML, CSS, Rust, Markdown, CSV 등 지원\n- **마크다운 듀얼 뷰**: 편집기 모드, 실시간 렌더링 미리보기, 나란히 보기 지원\n- **CSV 테이블 모드**: 대용량 CSV 파일을 테이블 그리드로 가독성 높게 조회\n- **사용자 환경 설정**: 글꼴, 크기, 컬러 테마, 커서 스타일, 들여쓰기, 자동 저장 등 맞춤 설정\n\n### ⌨️ 주요 단축키 안내\n- **Cmd + S**: 현재 파일 저장\n- **Cmd + N**: 새 파일 만들기\n- **Cmd + W**: 현재 탭 / 패널 닫기\n- **Cmd + B**: 좌측 탐색기 토글\n- **Cmd + \\\\**: 우측으로 화면 분할\n- **Cmd + T**: 하단 내장 터미널 추가\n- **Cmd + ,**: 환경설정 열기\n`,
-      savedContent: '',
-      isDirty: false,
-      encoding: 'UTF-8',
-      lineEnding: 'LF',
-      language: 'markdown',
-      viewMode: 'edit',
-    },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('tab-welcome');
+  // Tabs state initialized from saved session (No Welcome.md!)
+  const [tabs, setTabs] = useState<TabItem[]>(initialSession.tabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initialSession.activeTabId);
 
-  // Split Panes state
-  const [panes, setPanes] = useState<PaneItem[]>([
-    {
-      id: 'pane-1',
-      type: 'editor',
-      title: '편집기',
-      tabId: 'tab-welcome',
-    },
-  ]);
-  const [activePaneId, setActivePaneId] = useState<string>('pane-1');
+  // Split Panes state initialized from saved session
+  const [panes, setPanes] = useState<PaneItem[]>(initialSession.panes);
+  const [activePaneId, setActivePaneId] = useState<string>(initialSession.activePaneId);
   const [splitDirection, setSplitDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+
+  // Restore workspace files if workspacePath was restored from session
+  useEffect(() => {
+    if (initialSession.workspacePath) {
+      refreshWorkspace(initialSession.workspacePath);
+    }
+  }, []);
+
+  // Save session state to localStorage on every change
+  useEffect(() => {
+    try {
+      const sessionData: SavedSession = {
+        tabs,
+        activeTabId,
+        panes,
+        activePaneId,
+        workspacePath,
+      };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+    } catch (e) {
+      console.error('Failed to save session to localStorage:', e);
+    }
+  }, [tabs, activeTabId, panes, activePaneId, workspacePath]);
+
+  // Save session state immediately on beforeunload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try {
+        const sessionData: SavedSession = {
+          tabs: tabsRef.current,
+          activeTabId,
+          panes,
+          activePaneId,
+          workspacePath,
+        };
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+      } catch (e) {}
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeTabId, panes, activePaneId, workspacePath]);
 
   // Unsaved close confirmation state & handlers
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
@@ -1011,7 +1107,7 @@ export default function App() {
         } else if (tabs.length > 0) {
           handleCloseTab(activeTabId);
         }
-      } else if (isMeta && e.key === 'b') {
+      } else if (isMeta && e.shiftKey && (e.key === 'b' || e.key === 'B')) {
         e.preventDefault();
         setIsSidebarOpen((v) => !v);
       } else if (isMeta && e.key === '\\') {

@@ -1,13 +1,33 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+
+export interface CursorLineInfo {
+  line: number;
+  totalLines: number;
+  timestamp: number;
+}
+
+export interface ScrollRatioInfo {
+  ratio: number;
+  timestamp: number;
+}
 
 interface MarkdownPreviewProps {
   content: string;
   isLight?: boolean;
+  cursorLineInfo?: CursorLineInfo | null;
+  scrollRatioInfo?: ScrollRatioInfo | null;
 }
 
-export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({ content, isLight = false }) => {
+export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
+  content,
+  isLight = false,
+  cursorLineInfo,
+  scrollRatioInfo,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const htmlContent = useMemo(() => {
     try {
       const rawHtml = marked.parse(content || '', { async: false }) as string;
@@ -16,6 +36,59 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({ content, isLig
       return `<p style="color:red;">마크다운 렌더링 오류: ${e}</p>`;
     }
   }, [content]);
+
+  // Synchronize rendered view location when editor cursor changes
+  useEffect(() => {
+    if (!cursorLineInfo || !containerRef.current) return;
+    const container = containerRef.current;
+    const { line, totalLines } = cursorLineInfo;
+    if (totalLines <= 1) return;
+
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0) return;
+
+    // 1. Heading-aware positioning:
+    // Search upwards from cursor line to find active heading title
+    const lines = content.split('\n');
+    let activeHeading = '';
+    for (let i = line - 1; i >= 0; i--) {
+      const match = lines[i]?.match(/^#{1,6}\s+(.+)$/);
+      if (match) {
+        activeHeading = match[1].trim();
+        break;
+      }
+    }
+
+    if (activeHeading) {
+      const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      for (let i = 0; i < headings.length; i++) {
+        const h = headings[i] as HTMLElement;
+        if (h.textContent?.trim() === activeHeading) {
+          const containerRect = container.getBoundingClientRect();
+          const hRect = h.getBoundingClientRect();
+          const targetTop = hRect.top - containerRect.top + container.scrollTop - 24;
+          container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+          return;
+        }
+      }
+    }
+
+    // 2. Proportional smooth scroll based on cursor line
+    const progress = Math.max(0, Math.min(1, (line - 1) / (totalLines - 1)));
+    const targetScroll = progress * maxScroll;
+    container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+  }, [cursorLineInfo, content]);
+
+  // Synchronize view when editor scrolls
+  useEffect(() => {
+    if (!scrollRatioInfo || !containerRef.current) return;
+    const container = containerRef.current;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0) return;
+
+    const targetScroll = scrollRatioInfo.ratio * maxScroll;
+    container.scrollTop = targetScroll;
+  }, [scrollRatioInfo]);
 
   const bgColor = isLight ? '#ffffff' : '#1e1e24';
   const textColor = isLight ? '#1f2937' : '#e4e4e7';
@@ -130,12 +203,14 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({ content, isLig
         }
       `}</style>
       <div
+        ref={containerRef}
         className="md-preview-body"
         style={{
           flex: 1,
           overflowY: 'auto',
           padding: '24px 32px',
           boxSizing: 'border-box',
+          position: 'relative',
         }}
         dangerouslySetInnerHTML={{ __html: htmlContent }}
       />

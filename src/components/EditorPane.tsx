@@ -27,8 +27,19 @@ import {
   ExternalLink,
   Sparkles,
   Bot,
+  Bold,
+  Italic,
+  Strikethrough,
+  Heading,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
+  Quote,
+  CheckSquare2,
 } from 'lucide-react';
 import { extractAiCode, adjustIndentation, generateAiPrompt } from '../utils/aiCodeParser';
+import { applyMarkdownFormat, MarkdownFormatType } from '../utils/markdownFormatter';
+import { CursorLineInfo, ScrollRatioInfo } from './MarkdownPreview';
 
 // Configure monaco to use local installation (offline-ready)
 loader.config({ monaco });
@@ -64,6 +75,22 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const isCsv = tab.language === 'csv';
   const isHtml = tab.language === 'html' || tab.path.endsWith('.html') || tab.path.endsWith('.htm');
   const isLight = settings.theme === 'vs';
+
+  // Synchronized cursor and scroll states for split markdown view
+  const [cursorLineInfo, setCursorLineInfo] = useState<CursorLineInfo | null>(null);
+  const [scrollRatioInfo, setScrollRatioInfo] = useState<ScrollRatioInfo | null>(null);
+
+  // Markdown format applicator helper
+  const handleApplyMdFormat = async (type: MarkdownFormatType) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    let clip = '';
+    if (type === 'link') {
+      clip = await tauriApi.readClipboard().catch(() => '');
+    }
+    applyMarkdownFormat(editor, type, clip);
+  };
 
   // Whenever viewMode changes (e.g. from 'edit' directly to 'split'), trigger Monaco layout calculation
   useEffect(() => {
@@ -260,6 +287,63 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     // Register Alt+A / Option+A to ask AI with current selection
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyA, () => {
       handleAskAiWithSelection();
+    });
+
+    // Track cursor position for synchronized preview positioning
+    editor.onDidChangeCursorPosition((e) => {
+      const line = e.position.lineNumber;
+      const totalLines = editor.getModel()?.getLineCount() || 1;
+      setCursorLineInfo({ line, totalLines, timestamp: Date.now() });
+    });
+
+    // Track scroll position for synchronized preview scrolling
+    editor.onDidScrollChange((e) => {
+      const editorHeight = editor.getLayoutInfo()?.height || 600;
+      const maxScrollTop = Math.max(1, e.scrollHeight - editorHeight);
+      const ratio = Math.max(0, Math.min(1, e.scrollTop / maxScrollTop));
+      setScrollRatioInfo({ ratio, timestamp: Date.now() });
+    });
+
+    // Obsidian / Standard Markdown Formatting Shortcuts
+    const runMd = (type: MarkdownFormatType) => {
+      handleApplyMdFormat(type);
+    };
+
+    // Cmd+B / Ctrl+B: Bold
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB, () => runMd('bold'));
+    // Cmd+I / Ctrl+I: Italic
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, () => runMd('italic'));
+    // Cmd+Shift+X or Cmd+Shift+S: Strikethrough
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyX, () => runMd('strikethrough'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS, () => runMd('strikethrough'));
+    // Cmd+E: Inline Code
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => runMd('code'));
+    // Cmd+Shift+C: Code Block
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyC, () => runMd('codeblock'));
+    // Cmd+K: Link
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => runMd('link'));
+    // Cmd+Shift+H: Heading cycle
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyH, () => runMd('heading'));
+    // Cmd+1 ~ Cmd+6: Direct headings
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit1, () => runMd('heading-1'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit2, () => runMd('heading-2'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit3, () => runMd('heading-3'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit4, () => runMd('heading-4'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit5, () => runMd('heading-5'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit6, () => runMd('heading-6'));
+    // Cmd+Shift+U or Cmd+Shift+8: Bullet List
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyU, () => runMd('bullet'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Digit8, () => runMd('bullet'));
+    // Cmd+Shift+O or Cmd+Shift+7: Numbered List
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyO, () => runMd('number'));
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Digit7, () => runMd('number'));
+    // Cmd+Shift+. or Cmd+Shift+9: Blockquote
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Period, () => runMd('quote'));
+    // Cmd+Enter / Ctrl+Enter: Checkbox / Task list toggle
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      if (tab.language === 'markdown' || tab.name.endsWith('.md')) {
+        runMd('task');
+      }
     });
 
     // Track text selection
@@ -695,6 +779,193 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               나란히 보기
             </button>
           )}
+
+          {/* Quick Markdown Formatting Toolbar */}
+          {isMarkdown && tab.viewMode !== 'preview' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '6px' }}>
+              <div style={{ width: '1px', height: '14px', backgroundColor: isLight ? '#d4d4d8' : '#3f3f46', margin: '0 4px' }} />
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('bold')}
+                title={`굵게 (${isMac ? '⌘B' : 'Ctrl+B'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Bold size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('italic')}
+                title={`기울임 (${isMac ? '⌘I' : 'Ctrl+I'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Italic size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('strikethrough')}
+                title={`취소선 (${isMac ? '⌘⇧X' : 'Ctrl+Shift+X'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Strikethrough size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('heading')}
+                title={`제목 H1~H3 순환 (${isMac ? '⌘⇧H' : 'Ctrl+Shift+H'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Heading size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('code')}
+                title={`인라인 코드 (${isMac ? '⌘E' : 'Ctrl+E'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Code2 size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('link')}
+                title={`링크 삽입 (${isMac ? '⌘K' : 'Ctrl+K'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <LinkIcon size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('bullet')}
+                title={`글머리 기호 목록 (${isMac ? '⌘⇧U' : 'Ctrl+Shift+U'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <List size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('number')}
+                title={`번호 매기기 목록 (${isMac ? '⌘⇧O' : 'Ctrl+Shift+O'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <ListOrdered size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('quote')}
+                title={`인용구 (${isMac ? '⌘⇧.' : 'Ctrl+Shift+.'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <Quote size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyMdFormat('task')}
+                title={`체크박스/할 일 (${isMac ? '⌘Enter' : 'Ctrl+Enter'})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '3px 5px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent',
+                  color: isLight ? '#52525b' : '#a1a1aa',
+                }}
+              >
+                <CheckSquare2 size={12} />
+              </button>
+            </div>
+          )}
           {onOpenPreviewSplit && (isMarkdown || isHtml) && (
             <button
               onClick={onOpenPreviewSplit}
@@ -780,7 +1051,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               overflow: 'hidden',
             }}
           >
-            <MarkdownPreview content={tab.content} isLight={isLight} />
+            <MarkdownPreview
+              content={tab.content}
+              isLight={isLight}
+              cursorLineInfo={cursorLineInfo}
+              scrollRatioInfo={scrollRatioInfo}
+            />
           </div>
         )}
 

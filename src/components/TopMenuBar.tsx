@@ -77,6 +77,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
 }) => {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
+  const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -371,7 +372,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                 <FolderTree size={14} />
                 <span>탐색기 표시 / 숨기기</span>
               </div>
-              <span style={shortcutStyle}>⌘B</span>
+              <span style={shortcutStyle}>{isMac ? '⇧⌘B' : 'Ctrl+Shift+B'}</span>
             </div>
 
             <div style={separatorStyle} />
