@@ -530,16 +530,6 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             el.dispatchEvent(new MouseEvent('mouseup', opts));
             el.dispatchEvent(new MouseEvent('click', opts));
             el.click();
-
-            const child = el.querySelector('mat-icon, svg, span, button');
-            if (child) {
-                child.dispatchEvent(new PointerEvent('pointerdown', opts));
-                child.dispatchEvent(new MouseEvent('mousedown', opts));
-                child.dispatchEvent(new PointerEvent('pointerup', opts));
-                child.dispatchEvent(new MouseEvent('mouseup', opts));
-                child.dispatchEvent(new MouseEvent('click', opts));
-                try { child.click(); } catch(e2) {}
-            }
         } catch(e) {
             try { el.click(); } catch(e2) {}
         }
@@ -564,10 +554,9 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         } catch(e) {}
     }
 
-    function attemptSubmitPrompt(targetInput) {
-        if (targetInput) {
-            wakeUpElement(targetInput);
-        }
+    function submitPromptOnce(targetInput) {
+        if (!targetInput) return false;
+        wakeUpElement(targetInput);
 
         const sendBtn = findSendButton(document);
         if (sendBtn) {
@@ -579,27 +568,13 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             } catch(e) {}
 
             triggerClick(sendBtn);
-
-            const container = sendBtn.closest('.send-button-container') || sendBtn.parentElement;
-            if (container && container !== sendBtn) {
-                triggerClick(container);
-            }
+            dismissScrims();
+            return true;
         }
 
-        if (targetInput) {
-            triggerEnter(targetInput);
-            const rich = targetInput.closest('rich-textarea');
-            if (rich && rich !== targetInput) {
-                triggerEnter(rich);
-            }
-            const inputArea = targetInput.closest('.input-area') || targetInput.closest('fieldset');
-            if (inputArea) {
-                triggerEnter(inputArea);
-            }
-        }
-
+        triggerEnter(targetInput);
         dismissScrims();
-        return isStopOrGeneratingPresent();
+        return true;
     }
 
     function isStopOrGeneratingPresent() {
@@ -664,10 +639,13 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
         window.__geditor_ai_state = {
             status: 'submitting',
+            submitDispatched: false,
+            submitCount: 0,
             submitted: false,
             textInjected: false,
             promptText: text,
             startTime: Date.now(),
+            submitTimestamp: 0,
             oldCount: oldCount,
             oldLastText: oldLastText,
             lastTextLength: 0,
@@ -683,22 +661,20 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             return JSON.stringify(window.__geditor_ai_state);
         }
 
-        // Inject prompt text with full Quill / Clipboard / DOM synchronization
+        // 1. Inject prompt text with full Quill / Clipboard / DOM synchronization
         injectPromptText(target, text);
         window.__geditor_ai_state.textInjected = true;
 
-        // Schedule rapid submit attempts
-        [40, 120, 250, 500, 900, 1400, 2000].forEach(delay => {
-            setTimeout(function() {
-                if (!window.__geditor_ai_state || window.__geditor_ai_state.submitted) return;
-                const isStop = attemptSubmitPrompt(target);
-                if (isStop) {
-                    window.__geditor_ai_state.submitted = true;
-                    window.__geditor_ai_state.status = 'generating';
-                    window.__geditor_ai_state.lastChangeTime = Date.now();
-                }
-            }, delay);
-        });
+        // 2. Submit ONCE after a brief delay allowing Angular/Quill to update state
+        setTimeout(function() {
+            if (!window.__geditor_ai_state || window.__geditor_ai_state.submitDispatched) return;
+            const targetEl = findInputField(document) || target;
+            submitPromptOnce(targetEl);
+            window.__geditor_ai_state.submitDispatched = true;
+            window.__geditor_ai_state.submitCount = 1;
+            window.__geditor_ai_state.submitTimestamp = Date.now();
+            dismissScrims();
+        }, 180);
 
         return JSON.stringify(window.__geditor_ai_state);
     };
@@ -715,7 +691,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         const now = Date.now();
         const elapsed = now - state.startTime;
 
-        // 1. Submit check and retry
+        // 1. Check if the submission was accepted
         if (!state.submitted) {
             const target = findInputField(document);
             const inputLen = target ? (target.innerText || target.value || '').trim().length : 0;
@@ -729,30 +705,26 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                 state.status = 'generating';
                 state.lastChangeTime = now;
                 dismissScrims();
-            } else if (state.textInjected && inputLen === 0 && elapsed > 800) {
+            } else if (state.submitDispatched && inputLen === 0 && (now - state.submitTimestamp) > 300) {
                 state.submitted = true;
                 state.status = 'generating';
                 state.lastChangeTime = now;
                 dismissScrims();
             } else {
-                if (target && inputLen === 0 && state.promptText) {
-                    injectPromptText(target, state.promptText);
-                    state.textInjected = true;
-                }
-                const ok = attemptSubmitPrompt(target);
-                if (ok) {
-                    state.submitted = true;
-                    state.status = 'generating';
-                    state.lastChangeTime = now;
+                // Safety single retry ONLY if 4 seconds have passed since submitDispatched and input is still holding full text
+                if (state.submitDispatched && state.submitCount < 2 && (now - state.submitTimestamp) > 4000 && inputLen > 0) {
+                    submitPromptOnce(target);
+                    state.submitCount = 2;
+                    state.submitTimestamp = now;
                     dismissScrims();
-                } else {
-                    if (elapsed > 20000) {
-                        state.status = 'error';
-                        state.error = 'AI 전송 버튼 클릭에 실패했습니다. AI 패널 상태를 확인해 주세요.';
-                        return JSON.stringify(state);
-                    }
-                    return JSON.stringify({ status: 'submitting', elapsed: Math.round(elapsed / 1000) });
                 }
+
+                if (elapsed > 20000 && !state.submitDispatched) {
+                    state.status = 'error';
+                    state.error = 'AI 전송 버튼 클릭에 실패했습니다. AI 패널 상태를 확인해 주세요.';
+                    return JSON.stringify(state);
+                }
+                return JSON.stringify({ status: 'submitting', elapsed: Math.round(elapsed / 1000) });
             }
         }
 
@@ -802,8 +774,8 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         const isGenerating = isStopOrGeneratingPresent();
         const quietDuration = now - state.lastChangeTime;
 
-        // 4. Completion: new text has >= 10 chars, stop button is gone, quiet for 1.2s
-        if (curLength >= 10 && !isGenerating && quietDuration >= 1200) {
+        // 4. Completion: new text has >= 2 chars, stop button is gone, quiet for 1.2s
+        if (curLength >= 2 && !isGenerating && quietDuration >= 1200) {
             state.status = 'done';
             if (typeof window.__geditor_dom_to_markdown === 'function') {
                 state.resultMarkdown = window.__geditor_dom_to_markdown(curMsg).trim();
@@ -812,6 +784,26 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             }
             return JSON.stringify(state);
         }
+
+        if (elapsed > 120000) {
+            if (state.lastTextLength > 10) {
+                state.status = 'done';
+                state.resultMarkdown = typeof window.__geditor_dom_to_markdown === 'function'
+                    ? window.__geditor_dom_to_markdown(curMsg).trim()
+                    : (curMsg.innerText || '').trim();
+            } else {
+                state.status = 'error';
+                state.error = 'AI 응답 시간 초과 (120초)';
+            }
+            return JSON.stringify(state);
+        }
+
+        return JSON.stringify({
+            status: 'generating',
+            length: curLength,
+            elapsed: Math.round(elapsed / 1000)
+        });
+    };
 
         if (elapsed > 120000) {
             if (state.lastTextLength > 20) {
