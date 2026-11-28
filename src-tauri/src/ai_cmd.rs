@@ -267,10 +267,9 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
     function findInputField(root) {
         if (!root) return null;
         const selectors = [
-            '#prompt-textarea',
-            'rich-textarea div[contenteditable="true"]',
             'rich-textarea .ql-editor',
-            'rich-textarea p',
+            'rich-textarea div[contenteditable="true"]',
+            '#prompt-textarea',
             'div.ProseMirror[contenteditable="true"]',
             'div[contenteditable="true"][role="textbox"]',
             'fieldset div[contenteditable="true"]',
@@ -281,9 +280,11 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
         for (const sel of selectors) {
             try {
-                const el = root.querySelector(sel);
-                if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {
-                    return el;
+                const els = root.querySelectorAll(sel);
+                for (const el of els) {
+                    if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {
+                        return el;
+                    }
                 }
             } catch (e) {}
         }
@@ -299,6 +300,151 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         } catch (e) {}
 
         return null;
+    }
+
+    function findQuill(el) {
+        if (!el) return null;
+        if (window.Quill && typeof window.Quill.find === 'function') {
+            try {
+                const q = window.Quill.find(el);
+                if (q) return q;
+            } catch(e) {}
+        }
+        const nodes = [el, el.parentElement, el.closest('.ql-container'), el.closest('rich-textarea')];
+        for (const n of nodes) {
+            if (n && n.__quill) return n.__quill;
+        }
+        return null;
+    }
+
+    function wakeUpElement(target) {
+        if (!target) return;
+        try {
+            window.focus();
+            target.focus();
+            const rect = target.getBoundingClientRect();
+            const clientX = rect.left + Math.min(20, Math.max(5, rect.width / 2));
+            const clientY = rect.top + Math.min(20, Math.max(5, rect.height / 2));
+            const opts = {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: clientX,
+                clientY: clientY,
+                pointerId: 1
+            };
+            target.dispatchEvent(new PointerEvent('pointerdown', opts));
+            target.dispatchEvent(new MouseEvent('mousedown', opts));
+            target.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+            target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+            target.dispatchEvent(new PointerEvent('pointerup', opts));
+            target.dispatchEvent(new MouseEvent('mouseup', opts));
+            target.dispatchEvent(new MouseEvent('click', opts));
+
+            const q = findQuill(target);
+            if (q && typeof q.update === 'function') {
+                q.update('user');
+            }
+        } catch(e) {}
+    }
+
+    function injectPromptText(target, text) {
+        if (!target) return false;
+        wakeUpElement(target);
+
+        // 1. Direct Quill API if available
+        const q = findQuill(target);
+        if (q) {
+            try {
+                q.setText('');
+                if (q.clipboard && typeof q.clipboard.dangerouslyPasteHTML === 'function') {
+                    q.clipboard.dangerouslyPasteHTML(0, text.replace(/\n/g, '<br>'), 'user');
+                } else {
+                    q.setText(text, 'user');
+                }
+                if (typeof q.setSelection === 'function') {
+                    q.setSelection(q.getLength(), 0, 'user');
+                }
+            } catch(qe) {}
+        }
+
+        // 2. Synthetic ClipboardEvent ('paste')
+        try {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', text);
+            dt.setData('text/html', '<p>' + text.replace(/\n/g, '<br>') + '</p>');
+            const pasteEvt = new ClipboardEvent('paste', {
+                bubbles: true,
+                cancelable: true,
+                clipboardData: dt,
+                view: window
+            });
+            target.dispatchEvent(pasteEvt);
+        } catch(pe) {}
+
+        // 3. Selection + execCommand insertText
+        if (target.isContentEditable) {
+            try {
+                target.classList.remove('ql-blank');
+                const sel = window.getSelection();
+                if (sel) {
+                    const range = document.createRange();
+                    range.selectNodeContents(target);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                document.execCommand('insertText', false, text);
+            } catch(ee) {}
+
+            const cur = (target.innerText || target.textContent || '').trim();
+            if (cur.length === 0) {
+                target.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
+                target.classList.remove('ql-blank');
+            }
+        } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+            target.select();
+            try {
+                document.execCommand('insertText', false, text);
+            } catch(ee) {}
+            if (target.value !== text) {
+                const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                if (setter) {
+                    setter.call(target, text);
+                } else {
+                    target.value = text;
+                }
+            }
+        }
+
+        // 4. Dispatch standard DOM events to notify frameworks (Angular / React / Vue)
+        try {
+            target.dispatchEvent(new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: text
+            }));
+            target.dispatchEvent(new InputEvent('input', {
+                bubbles: true,
+                inputType: 'insertText',
+                data: text
+            }));
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            target.dispatchEvent(new CustomEvent('text-change', { bubbles: true, detail: { source: 'user' } }));
+
+            const rich = target.closest('rich-textarea');
+            if (rich) {
+                rich.classList.remove('ql-blank');
+                rich.dispatchEvent(new Event('input', { bubbles: true }));
+                rich.dispatchEvent(new Event('change', { bubbles: true }));
+                rich.dispatchEvent(new CustomEvent('textChange', { bubbles: true }));
+            }
+        } catch(e) {}
+
+        wakeUpElement(target);
+        return true;
     }
 
     function findSendButton(root) {
@@ -319,6 +465,9 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             'div[role="button"][aria-label*="Send"]',
             'div[role="button"][aria-label*="보내기"]',
             'div[role="button"][aria-label*="전송"]',
+            'button.send-button-container',
+            '.input-area-container button.send-button',
+            '.bottom-container button.send-button',
             'button[type="submit"]',
             'fieldset button:last-child'
         ];
@@ -347,27 +496,49 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         return null;
     }
 
-    function isButtonUsable(btn) {
-        if (!btn) return false;
-        if (btn.disabled) return false;
-        if (btn.hasAttribute('disabled')) return false;
-        if (btn.getAttribute('aria-disabled') === 'true') return false;
-        if (btn.classList.contains('disabled')) return false;
-        return true;
+    function dismissScrims() {
+        try {
+            const scrims = document.querySelectorAll('.scrim, .chat-history-scrim, .full-screen-scrim, [class*="scrim"], [class*="backdrop"]');
+            for (const s of scrims) {
+                if (!s.closest('mat-dialog-container, [role="dialog"]')) {
+                    s.style.display = 'none';
+                    s.style.opacity = '0';
+                    s.style.pointerEvents = 'none';
+                }
+            }
+        } catch(e) {}
     }
 
     function triggerClick(el) {
         if (!el) return;
         try {
             el.focus();
-            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            const rect = el.getBoundingClientRect();
+            const clientX = rect.left + Math.min(15, Math.max(5, rect.width / 2));
+            const clientY = rect.top + Math.min(15, Math.max(5, rect.height / 2));
+            const opts = {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: clientX,
+                clientY: clientY,
+                pointerId: 1
+            };
+            el.dispatchEvent(new PointerEvent('pointerdown', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new PointerEvent('pointerup', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
             el.click();
-            const child = el.querySelector('mat-icon, svg, span');
+
+            const child = el.querySelector('mat-icon, svg, span, button');
             if (child) {
-                child.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                child.click();
+                child.dispatchEvent(new PointerEvent('pointerdown', opts));
+                child.dispatchEvent(new MouseEvent('mousedown', opts));
+                child.dispatchEvent(new PointerEvent('pointerup', opts));
+                child.dispatchEvent(new MouseEvent('mouseup', opts));
+                child.dispatchEvent(new MouseEvent('click', opts));
+                try { child.click(); } catch(e2) {}
             }
         } catch(e) {
             try { el.click(); } catch(e2) {}
@@ -378,37 +549,57 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         if (!el) return;
         try {
             el.focus();
-            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
-            el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
-            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
+            const evInit = {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: true,
+                view: window
+            };
+            el.dispatchEvent(new KeyboardEvent('keydown', evInit));
+            el.dispatchEvent(new KeyboardEvent('keypress', evInit));
+            el.dispatchEvent(new KeyboardEvent('keyup', evInit));
         } catch(e) {}
     }
 
     function attemptSubmitPrompt(targetInput) {
+        if (targetInput) {
+            wakeUpElement(targetInput);
+        }
+
         const sendBtn = findSendButton(document);
         if (sendBtn) {
-            if (isButtonUsable(sendBtn)) {
-                triggerClick(sendBtn);
-                return true;
-            }
             try {
-                sendBtn.removeAttribute('disabled');
-                sendBtn.removeAttribute('aria-disabled');
                 sendBtn.disabled = false;
-                triggerClick(sendBtn);
+                sendBtn.removeAttribute('disabled');
+                sendBtn.setAttribute('aria-disabled', 'false');
+                sendBtn.classList.remove('disabled');
             } catch(e) {}
+
+            triggerClick(sendBtn);
+
+            const container = sendBtn.closest('.send-button-container') || sendBtn.parentElement;
+            if (container && container !== sendBtn) {
+                triggerClick(container);
+            }
         }
 
         if (targetInput) {
             triggerEnter(targetInput);
+            const rich = targetInput.closest('rich-textarea');
+            if (rich && rich !== targetInput) {
+                triggerEnter(rich);
+            }
+            const inputArea = targetInput.closest('.input-area') || targetInput.closest('fieldset');
+            if (inputArea) {
+                triggerEnter(inputArea);
+            }
         }
 
-        if (sendBtn && isButtonUsable(sendBtn)) {
-            triggerClick(sendBtn);
-            return true;
-        }
-
-        return false;
+        dismissScrims();
+        return isStopOrGeneratingPresent();
     }
 
     function isStopOrGeneratingPresent() {
@@ -462,6 +653,8 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
     }
 
     window.__geditor_start_inline_ai = function(text) {
+        dismissScrims();
+
         // Tag all existing assistant messages so they are NEVER returned as the new answer!
         const existingMsgs = getAllAssistantMessages();
         existingMsgs.forEach(el => el.setAttribute('data-geditor-historical', 'true'));
@@ -472,6 +665,8 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         window.__geditor_ai_state = {
             status: 'submitting',
             submitted: false,
+            textInjected: false,
+            promptText: text,
             startTime: Date.now(),
             oldCount: oldCount,
             oldLastText: oldLastText,
@@ -488,75 +683,16 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             return JSON.stringify(window.__geditor_ai_state);
         }
 
-        // Give focus and simulate user click to dismiss blur / inactive dimming
-        window.focus();
-        target.focus();
-        try {
-            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        } catch(e) {}
+        // Inject prompt text with full Quill / Clipboard / DOM synchronization
+        injectPromptText(target, text);
+        window.__geditor_ai_state.textInjected = true;
 
-        try {
-            if (target.isContentEditable) {
-                target.classList.remove('ql-blank');
-                const sel = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(target);
-                if (sel) {
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                }
-                const inserted = document.execCommand('insertText', false, text);
-                if (!inserted || (target.innerText || '').trim().length === 0) {
-                    target.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
-                }
-            } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
-                target.select();
-                const inserted = document.execCommand('insertText', false, text);
-                if (!inserted || target.value !== text) {
-                    const proto = target.tagName === 'TEXTAREA'
-                        ? window.HTMLTextAreaElement.prototype
-                        : window.HTMLInputElement.prototype;
-                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-                    if (setter) {
-                        setter.call(target, text);
-                    } else {
-                        target.value = text;
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Inline AI text injection error:', e);
-        }
-
-        // Dispatch input events on target and parent rich-textarea
-        target.dispatchEvent(new InputEvent('beforeinput', {
-            bubbles: true,
-            cancelable: true,
-            inputType: 'insertText',
-            data: text
-        }));
-        target.dispatchEvent(new InputEvent('input', {
-            bubbles: true,
-            inputType: 'insertText',
-            data: text
-        }));
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-        target.dispatchEvent(new Event('change', { bubbles: true }));
-
-        const richContainer = target.closest('rich-textarea') || target.closest('.input-area');
-        if (richContainer) {
-            richContainer.dispatchEvent(new Event('input', { bubbles: true }));
-            richContainer.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        // Active submit retry schedule
-        [80, 200, 400, 700, 1100, 1600, 2200].forEach(delay => {
+        // Schedule rapid submit attempts
+        [40, 120, 250, 500, 900, 1400, 2000].forEach(delay => {
             setTimeout(function() {
                 if (!window.__geditor_ai_state || window.__geditor_ai_state.submitted) return;
-                const ok = attemptSubmitPrompt(target);
-                if (ok) {
+                const isStop = attemptSubmitPrompt(target);
+                if (isStop) {
                     window.__geditor_ai_state.submitted = true;
                     window.__geditor_ai_state.status = 'generating';
                     window.__geditor_ai_state.lastChangeTime = Date.now();
@@ -579,25 +715,38 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         const now = Date.now();
         const elapsed = now - state.startTime;
 
-        // 1. Submit retry if not yet confirmed submitted
+        // 1. Submit check and retry
         if (!state.submitted) {
             const target = findInputField(document);
             const inputLen = target ? (target.innerText || target.value || '').trim().length : 0;
             const isStopPresent = isStopOrGeneratingPresent();
 
-            // If input is cleared or stop button appeared, it HAS been submitted!
-            if (isStopPresent || (inputLen === 0 && elapsed > 250)) {
+            const allMsgs = getAllAssistantMessages();
+            const newMsgs = allMsgs.filter(el => !el.hasAttribute('data-geditor-historical'));
+
+            if (isStopPresent || newMsgs.length > 0 || allMsgs.length > state.oldCount) {
                 state.submitted = true;
                 state.status = 'generating';
                 state.lastChangeTime = now;
+                dismissScrims();
+            } else if (state.textInjected && inputLen === 0 && elapsed > 800) {
+                state.submitted = true;
+                state.status = 'generating';
+                state.lastChangeTime = now;
+                dismissScrims();
             } else {
+                if (target && inputLen === 0 && state.promptText) {
+                    injectPromptText(target, state.promptText);
+                    state.textInjected = true;
+                }
                 const ok = attemptSubmitPrompt(target);
                 if (ok) {
                     state.submitted = true;
                     state.status = 'generating';
                     state.lastChangeTime = now;
+                    dismissScrims();
                 } else {
-                    if (elapsed > 15000) {
+                    if (elapsed > 20000) {
                         state.status = 'error';
                         state.error = 'AI 전송 버튼 클릭에 실패했습니다. AI 패널 상태를 확인해 주세요.';
                         return JSON.stringify(state);
@@ -632,9 +781,9 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
         // If the new response hasn't started yet:
         if (!curMsg || curLength === 0) {
-            if (elapsed > 25000) {
+            if (elapsed > 45000) {
                 state.status = 'error';
-                state.error = 'AI 응답 시작을 감지하지 못했습니다 (25초 초과).';
+                state.error = 'AI 응답 시작을 감지하지 못했습니다 (45초 초과).';
                 return JSON.stringify(state);
             }
             return JSON.stringify({
@@ -653,8 +802,8 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         const isGenerating = isStopOrGeneratingPresent();
         const quietDuration = now - state.lastChangeTime;
 
-        // 4. Completion: new text has >= 10 chars, stop button is gone, quiet for 1.5s
-        if (curLength >= 10 && !isGenerating && quietDuration >= 1500) {
+        // 4. Completion: new text has >= 10 chars, stop button is gone, quiet for 1.2s
+        if (curLength >= 10 && !isGenerating && quietDuration >= 1200) {
             state.status = 'done';
             if (typeof window.__geditor_dom_to_markdown === 'function') {
                 state.resultMarkdown = window.__geditor_dom_to_markdown(curMsg).trim();
@@ -1159,6 +1308,25 @@ pub async fn execute_inline_ai_prompt(
         }
     };
 
+    // 1. Write final prompt to native system clipboard as fallback/paste source
+    let _ = crate::clipboard_cmd::write_clipboard_text(final_prompt.clone());
+
+    // 2. Active focus retries to ensure macOS Cocoa firstResponder activates the AI panel
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        for delay in [0, 60, 150, 350, 800, 1500] {
+            if delay > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+            }
+            if let Some(panel) = app_clone.get_webview("ai-panel") {
+                let _ = panel.set_focus();
+            }
+            if let Some(ai_win) = app_clone.get_webview_window("ai-assistant") {
+                let _ = ai_win.set_focus();
+            }
+        }
+    });
+
     let encoded_prompt = serde_json::to_string(&final_prompt).unwrap_or_else(|_| format!("\"{}\"", final_prompt));
 
     let start_script = format!(
@@ -1238,6 +1406,8 @@ pub async fn execute_inline_ai_prompt(
                     .unwrap_or("AI 응답 처리 중 오류가 발생했습니다.")
                     .to_string();
                 return Err(err);
+            } else if status == "submitting" {
+                let _ = webview.set_focus();
             }
         }
     }
