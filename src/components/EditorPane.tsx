@@ -38,6 +38,7 @@ import {
   CheckSquare2,
 } from 'lucide-react';
 import { extractAiCode, adjustIndentation, generateAiPrompt, cleanInlineAiOutput } from '../utils/aiCodeParser';
+import { calculateBlockEndInsertion } from '../utils/editorBlockHelper';
 import { applyMarkdownFormat, MarkdownFormatType } from '../utils/markdownFormatter';
 import { CursorLineInfo, ScrollRatioInfo } from './MarkdownPreview';
 import { InlineAiWidget } from './InlineAiWidget';
@@ -352,28 +353,42 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       const cleaned = cleanInlineAiOutput(rawOutput, isMd);
 
       editor.focus();
-      if (inlineAiState.hasSelection && inlineAiState.selectedRange) {
+      if (model) {
+        const targetRange = inlineAiState.hasSelection && inlineAiState.selectedRange
+          ? inlineAiState.selectedRange
+          : {
+              startLineNumber: inlineAiState.cursorPosition?.lineNumber || 1,
+              startColumn: inlineAiState.cursorPosition?.column || 1,
+              endLineNumber: inlineAiState.cursorPosition?.lineNumber || 1,
+              endColumn: inlineAiState.cursorPosition?.column || 1,
+            };
+
+        const insertion = calculateBlockEndInsertion(
+          (lineNum) => model.getLineContent(lineNum),
+          (lineNum) => model.getLineMaxColumn(lineNum),
+          model.getLineCount(),
+          targetRange,
+          cleaned
+        );
+
+        // Pure insertion below the block (keeps the original selected text 100% intact)
         editor.executeEdits('inline-ai', [
           {
-            range: inlineAiState.selectedRange,
-            text: cleaned,
+            range: new monaco.Range(
+              insertion.insertLineNumber,
+              insertion.insertColumn,
+              insertion.insertLineNumber,
+              insertion.insertColumn
+            ),
+            text: insertion.textToInsert,
             forceMoveMarkers: true,
           },
         ]);
-        const endPos = editor.getPosition();
-        if (endPos) editor.revealPositionInCenterIfOutsideViewport(endPos);
-      } else if (inlineAiState.cursorPosition) {
-        const cp = inlineAiState.cursorPosition;
-        const insertRange = new monaco.Range(cp.lineNumber, cp.column, cp.lineNumber, cp.column);
-        editor.executeEdits('inline-ai', [
-          {
-            range: insertRange,
-            text: cleaned,
-            forceMoveMarkers: true,
-          },
-        ]);
-        const endPos = editor.getPosition();
-        if (endPos) editor.revealPositionInCenterIfOutsideViewport(endPos);
+
+        // Place cursor at the start of the newly generated block
+        const targetFocusLine = Math.min(model.getLineCount(), insertion.insertLineNumber + 2);
+        editor.setPosition(new monaco.Position(targetFocusLine, 1));
+        editor.revealPositionInCenterIfOutsideViewport(new monaco.Position(targetFocusLine, 1));
       }
 
       setInlineAiState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
