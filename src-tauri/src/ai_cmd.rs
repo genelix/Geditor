@@ -304,14 +304,21 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
     function findSendButton(root) {
         if (!root) return null;
         const selectors = [
-            'button[aria-label*="Send"]',
-            'button[aria-label*="전송"]',
-            'button[aria-label*="보내기"]',
-            'button[data-testid="send-button"]',
             'button.send-button',
+            'button[aria-label*="Send"]',
+            'button[aria-label*="보내기"]',
+            'button[aria-label*="전송"]',
+            'button[data-testid="send-button"]',
             '.send-button-container button',
+            'button.mat-mdc-icon-button[aria-label*="Send"]',
+            'button.mat-mdc-icon-button[aria-label*="보내기"]',
+            'button.mat-mdc-icon-button[aria-label*="전송"]',
             'button[mattooltip*="Send"]',
+            'button[mattooltip*="보내기"]',
             'button[mattooltip*="전송"]',
+            'div[role="button"][aria-label*="Send"]',
+            'div[role="button"][aria-label*="보내기"]',
+            'div[role="button"][aria-label*="전송"]',
             'button[type="submit"]',
             'fieldset button:last-child'
         ];
@@ -320,7 +327,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             try {
                 const els = root.querySelectorAll(sel);
                 for (const el of els) {
-                    if (el.offsetParent !== null || el.offsetHeight > 0) {
+                    if (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none') {
                         return el;
                     }
                 }
@@ -340,6 +347,70 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         return null;
     }
 
+    function isButtonUsable(btn) {
+        if (!btn) return false;
+        if (btn.disabled) return false;
+        if (btn.hasAttribute('disabled')) return false;
+        if (btn.getAttribute('aria-disabled') === 'true') return false;
+        if (btn.classList.contains('disabled')) return false;
+        return true;
+    }
+
+    function triggerClick(el) {
+        if (!el) return;
+        try {
+            el.focus();
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            el.click();
+            const child = el.querySelector('mat-icon, svg, span');
+            if (child) {
+                child.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                child.click();
+            }
+        } catch(e) {
+            try { el.click(); } catch(e2) {}
+        }
+    }
+
+    function triggerEnter(el) {
+        if (!el) return;
+        try {
+            el.focus();
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, view: window }));
+        } catch(e) {}
+    }
+
+    function attemptSubmitPrompt(targetInput) {
+        const sendBtn = findSendButton(document);
+        if (sendBtn) {
+            if (isButtonUsable(sendBtn)) {
+                triggerClick(sendBtn);
+                return true;
+            }
+            try {
+                sendBtn.removeAttribute('disabled');
+                sendBtn.removeAttribute('aria-disabled');
+                sendBtn.disabled = false;
+                triggerClick(sendBtn);
+            } catch(e) {}
+        }
+
+        if (targetInput) {
+            triggerEnter(targetInput);
+        }
+
+        if (sendBtn && isButtonUsable(sendBtn)) {
+            triggerClick(sendBtn);
+            return true;
+        }
+
+        return false;
+    }
+
     function isStopOrGeneratingPresent() {
         const stopSelectors = [
             'button[aria-label*="Stop"]',
@@ -354,15 +425,17 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             'mat-progress-spinner'
         ];
         for (const sel of stopSelectors) {
-            const el = document.querySelector(sel);
-            if (el && (el.offsetParent !== null || el.offsetHeight > 0)) {
-                return true;
-            }
+            try {
+                const el = document.querySelector(sel);
+                if (el && (el.offsetParent !== null || el.offsetHeight > 0)) {
+                    return true;
+                }
+            } catch(e) {}
         }
         return false;
     }
 
-    function getLatestAssistantMessage() {
+    function getAllAssistantMessages() {
         const msgSelectors = [
             'message-content',
             'model-response',
@@ -377,22 +450,31 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             '.agent-turn'
         ];
         for (const sel of msgSelectors) {
-            const list = document.querySelectorAll(sel);
-            if (list.length > 0) {
-                return list[list.length - 1];
-            }
+            try {
+                const list = document.querySelectorAll(sel);
+                if (list.length > 0) {
+                    return Array.from(list);
+                }
+            } catch (e) {}
         }
         const mdList = document.querySelectorAll('.markdown');
-        if (mdList.length > 0) {
-            return mdList[mdList.length - 1];
-        }
-        return null;
+        return Array.from(mdList);
     }
 
     window.__geditor_start_inline_ai = function(text) {
+        // Tag all existing assistant messages so they are NEVER returned as the new answer!
+        const existingMsgs = getAllAssistantMessages();
+        existingMsgs.forEach(el => el.setAttribute('data-geditor-historical', 'true'));
+        const oldCount = existingMsgs.length;
+        const oldLastMsg = oldCount > 0 ? existingMsgs[oldCount - 1] : null;
+        const oldLastText = oldLastMsg ? (oldLastMsg.innerText || oldLastMsg.textContent || '').trim() : '';
+
         window.__geditor_ai_state = {
-            status: 'starting',
+            status: 'submitting',
+            submitted: false,
             startTime: Date.now(),
+            oldCount: oldCount,
+            oldLastText: oldLastText,
             lastTextLength: 0,
             lastChangeTime: Date.now(),
             resultMarkdown: null,
@@ -406,9 +488,18 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             return JSON.stringify(window.__geditor_ai_state);
         }
 
+        // Give focus and simulate user click to dismiss blur / inactive dimming
+        window.focus();
         target.focus();
         try {
+            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        } catch(e) {}
+
+        try {
             if (target.isContentEditable) {
+                target.classList.remove('ql-blank');
                 const sel = window.getSelection();
                 const range = document.createRange();
                 range.selectNodeContents(target);
@@ -417,19 +508,8 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                     sel.addRange(range);
                 }
                 const inserted = document.execCommand('insertText', false, text);
-                if (!inserted) {
-                    target.innerText = text;
-                    target.dispatchEvent(new InputEvent('beforeinput', {
-                        bubbles: true,
-                        cancelable: true,
-                        inputType: 'insertText',
-                        data: text
-                    }));
-                    target.dispatchEvent(new InputEvent('input', {
-                        bubbles: true,
-                        inputType: 'insertText',
-                        data: text
-                    }));
+                if (!inserted || (target.innerText || '').trim().length === 0) {
+                    target.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
                 }
             } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
                 target.select();
@@ -450,21 +530,39 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             console.error('Inline AI text injection error:', e);
         }
 
+        // Dispatch input events on target and parent rich-textarea
+        target.dispatchEvent(new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: text
+        }));
+        target.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertText',
+            data: text
+        }));
         target.dispatchEvent(new Event('input', { bubbles: true }));
         target.dispatchEvent(new Event('change', { bubbles: true }));
 
-        setTimeout(function() {
-            const sendBtn = findSendButton(document);
-            if (sendBtn && !sendBtn.disabled) {
-                sendBtn.click();
-            } else {
-                target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                target.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                target.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-            }
-            window.__geditor_ai_state.status = 'generating';
-            window.__geditor_ai_state.lastChangeTime = Date.now();
-        }, 120);
+        const richContainer = target.closest('rich-textarea') || target.closest('.input-area');
+        if (richContainer) {
+            richContainer.dispatchEvent(new Event('input', { bubbles: true }));
+            richContainer.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Active submit retry schedule
+        [80, 200, 400, 700, 1100, 1600, 2200].forEach(delay => {
+            setTimeout(function() {
+                if (!window.__geditor_ai_state || window.__geditor_ai_state.submitted) return;
+                const ok = attemptSubmitPrompt(target);
+                if (ok) {
+                    window.__geditor_ai_state.submitted = true;
+                    window.__geditor_ai_state.status = 'generating';
+                    window.__geditor_ai_state.lastChangeTime = Date.now();
+                }
+            }, delay);
+        });
 
         return JSON.stringify(window.__geditor_ai_state);
     };
@@ -478,10 +576,74 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             return JSON.stringify(state);
         }
 
-        const curMsg = getLatestAssistantMessage();
-        const curLength = curMsg ? (curMsg.innerText || curMsg.textContent || '').trim().length : 0;
         const now = Date.now();
+        const elapsed = now - state.startTime;
 
+        // 1. Submit retry if not yet confirmed submitted
+        if (!state.submitted) {
+            const target = findInputField(document);
+            const inputLen = target ? (target.innerText || target.value || '').trim().length : 0;
+            const isStopPresent = isStopOrGeneratingPresent();
+
+            // If input is cleared or stop button appeared, it HAS been submitted!
+            if (isStopPresent || (inputLen === 0 && elapsed > 250)) {
+                state.submitted = true;
+                state.status = 'generating';
+                state.lastChangeTime = now;
+            } else {
+                const ok = attemptSubmitPrompt(target);
+                if (ok) {
+                    state.submitted = true;
+                    state.status = 'generating';
+                    state.lastChangeTime = now;
+                } else {
+                    if (elapsed > 15000) {
+                        state.status = 'error';
+                        state.error = 'AI 전송 버튼 클릭에 실패했습니다. AI 패널 상태를 확인해 주세요.';
+                        return JSON.stringify(state);
+                    }
+                    return JSON.stringify({ status: 'submitting', elapsed: Math.round(elapsed / 1000) });
+                }
+            }
+        }
+
+        // 2. Identify the NEW response message (must NOT be historical!)
+        const allMsgs = getAllAssistantMessages();
+        const newMsgs = allMsgs.filter(el => !el.hasAttribute('data-geditor-historical'));
+
+        let curMsg = null;
+        let curLength = 0;
+
+        if (newMsgs.length > 0) {
+            curMsg = newMsgs[newMsgs.length - 1];
+            curLength = (curMsg.innerText || curMsg.textContent || '').trim().length;
+        } else if (allMsgs.length > state.oldCount) {
+            curMsg = allMsgs[allMsgs.length - 1];
+            curLength = (curMsg.innerText || curMsg.textContent || '').trim().length;
+        } else if (allMsgs.length === state.oldCount && allMsgs.length > 0) {
+            const candidate = allMsgs[allMsgs.length - 1];
+            const candText = (candidate.innerText || candidate.textContent || '').trim();
+            // ONLY if text is DIFFERENT from the old text!
+            if (candText !== state.oldLastText && candText.length > 5) {
+                curMsg = candidate;
+                curLength = candText.length;
+            }
+        }
+
+        // If the new response hasn't started yet:
+        if (!curMsg || curLength === 0) {
+            if (elapsed > 25000) {
+                state.status = 'error';
+                state.error = 'AI 응답 시작을 감지하지 못했습니다 (25초 초과).';
+                return JSON.stringify(state);
+            }
+            return JSON.stringify({
+                status: 'waiting_for_tokens',
+                elapsed: Math.round(elapsed / 1000)
+            });
+        }
+
+        // 3. Track response generation
         if (curLength > state.lastTextLength) {
             state.lastTextLength = curLength;
             state.lastChangeTime = now;
@@ -490,28 +652,24 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
         const isGenerating = isStopOrGeneratingPresent();
         const quietDuration = now - state.lastChangeTime;
-        const elapsed = now - state.startTime;
 
-        if (state.lastTextLength >= 10 && !isGenerating && quietDuration >= 1400) {
+        // 4. Completion: new text has >= 10 chars, stop button is gone, quiet for 1.5s
+        if (curLength >= 10 && !isGenerating && quietDuration >= 1500) {
             state.status = 'done';
-            if (typeof domToMarkdown === 'function') {
-                state.resultMarkdown = domToMarkdown(curMsg).trim();
+            if (typeof window.__geditor_dom_to_markdown === 'function') {
+                state.resultMarkdown = window.__geditor_dom_to_markdown(curMsg).trim();
             } else {
                 state.resultMarkdown = (curMsg.innerText || curMsg.textContent || '').trim();
             }
             return JSON.stringify(state);
         }
 
-        if (state.lastTextLength === 0 && elapsed > 18000) {
-            state.status = 'error';
-            state.error = 'AI 응답 시작을 감지하지 못했습니다. 웹페이지 로그인 및 연결 상태를 확인해 주세요.';
-            return JSON.stringify(state);
-        }
-
         if (elapsed > 120000) {
             if (state.lastTextLength > 20) {
                 state.status = 'done';
-                state.resultMarkdown = typeof domToMarkdown === 'function' ? domToMarkdown(curMsg).trim() : (curMsg.innerText || '').trim();
+                state.resultMarkdown = typeof window.__geditor_dom_to_markdown === 'function'
+                    ? window.__geditor_dom_to_markdown(curMsg).trim()
+                    : (curMsg.innerText || '').trim();
             } else {
                 state.status = 'error';
                 state.error = 'AI 응답 시간 초과 (120초)';
@@ -978,6 +1136,9 @@ pub async fn execute_inline_ai_prompt(
     } else {
         return Err("AI 도우미 패널이 준비되지 않았습니다. AI 패널을 먼저 열어주세요.".to_string());
     };
+
+    // Give focus to the webview window so that the browser removes inactive/blur dimming
+    let _ = webview.set_focus();
 
     // Ensure the tracker and inline script are active in the webview
     let _ = webview.eval(AI_SELECTION_TRACKER_SCRIPT);
