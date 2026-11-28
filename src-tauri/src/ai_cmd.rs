@@ -343,42 +343,26 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             target.classList.remove('ql-blank');
             target.focus();
 
-            // 1. Synthetic ClipboardEvent ('paste') with DataTransfer
-            // This is the native, framework-supported way to paste multiline content into Quill and contenteditable
+            // 1. If Quill is detected, ALWAYS call q.setText to ensure Quill's Delta model and change detection are updated
+            let quillUpdated = false;
             try {
-                const dt = new DataTransfer();
-                dt.setData('text/plain', text);
-                const html = text.split('\n').map(l => l.length > 0 ? `<p>${escapeHtml(l)}</p>` : '<p><br></p>').join('');
-                dt.setData('text/html', html);
-                const pasteEvt = new ClipboardEvent('paste', {
-                    bubbles: true,
-                    cancelable: true,
-                    composed: true,
-                    clipboardData: dt,
-                    view: window
-                });
-                target.dispatchEvent(pasteEvt);
-            } catch(pe) {}
+                const q = target.__quill || target.parentElement?.__quill || target.closest('.ql-container')?.__quill || target.closest('rich-textarea')?.__quill;
+                if (q && typeof q.setText === 'function') {
+                    q.setText(text, 'user');
+                    if (typeof q.setSelection === 'function') {
+                        q.setSelection(q.getLength(), 0, 'user');
+                    }
+                    quillUpdated = true;
+                }
+            } catch(qe) {}
 
-            let cur = (target.innerText || target.textContent || '').trim();
-
-            // 2. Direct DOM paragraph injection fallback if paste was not handled (e.g. text too short or empty)
-            if (cur.length < text.trim().length * 0.7) {
+            // 2. Also ensure DOM paragraphs exist if Quill was absent or innerText is empty
+            const cur = (target.innerText || target.textContent || '').trim();
+            if (!quillUpdated || cur.length < text.trim().length * 0.7) {
                 const paragraphs = text.split('\n');
                 target.innerHTML = paragraphs.map(p => p.length > 0 ? '<p>' + escapeHtml(p) + '</p>' : '<p><br></p>').join('');
                 target.classList.remove('ql-blank');
             }
-
-            // 3. Quill setText synchronization if Quill is detected on the element
-            try {
-                const q = target.__quill || target.parentElement?.__quill || target.closest('.ql-container')?.__quill || target.closest('rich-textarea')?.__quill;
-                if (q && typeof q.setText === 'function') {
-                    const curText = (target.innerText || target.textContent || '').trim();
-                    if (curText.length < text.trim().length * 0.7) {
-                        q.setText(text, 'user');
-                    }
-                }
-            } catch(qe) {}
         } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
             target.select();
             try {
@@ -426,46 +410,64 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
     }
 
     function findSendButton(root) {
-        if (!root) return null;
+        if (!root) root = document;
+        const input = findInputField(root);
+        const searchRoots = [];
+        if (input) {
+            const inputContainer = input.closest('fieldset, form, .input-area, .input-area-container, .bottom-container, .chat-input-container, rich-textarea') || input.parentElement;
+            if (inputContainer) {
+                searchRoots.push(inputContainer);
+                if (inputContainer.parentElement) searchRoots.push(inputContainer.parentElement);
+                if (inputContainer.parentElement && inputContainer.parentElement.parentElement) {
+                    searchRoots.push(inputContainer.parentElement.parentElement);
+                }
+            }
+        }
+        searchRoots.push(root);
+
         const selectors = [
             'button.send-button',
-            'button[aria-label*="Send"]',
+            '.send-button-container button',
             'button[aria-label*="보내기"]',
             'button[aria-label*="전송"]',
-            'button[aria-label*="제출"]',
-            'button[aria-label*="프롬프트"]',
+            'button[aria-label*="프롬프트 제출"]',
+            'button[aria-label*="프롬프트 전송"]',
+            'button[aria-label*="Send"]',
             'button[aria-label*="Submit"]',
-            'button[aria-label*="Prompt"]',
             'button[data-testid="send-button"]',
-            '.send-button-container button',
-            'button.mat-mdc-icon-button[aria-label*="Send"]',
             'button.mat-mdc-icon-button[aria-label*="보내기"]',
             'button.mat-mdc-icon-button[aria-label*="전송"]',
             'button.mat-mdc-icon-button[aria-label*="제출"]',
-            'button[mattooltip*="Send"]',
+            'button.mat-mdc-icon-button[aria-label*="Send"]',
             'button[mattooltip*="보내기"]',
             'button[mattooltip*="전송"]',
             'button[mattooltip*="제출"]',
-            'div[role="button"][aria-label*="Send"]',
+            'button[mattooltip*="Send"]',
             'div[role="button"][aria-label*="보내기"]',
             'div[role="button"][aria-label*="전송"]',
             'div[role="button"][aria-label*="제출"]',
+            'div[role="button"][aria-label*="Send"]',
             'button.send-button-container',
-            '.input-area-container button.send-button',
-            '.bottom-container button.send-button',
             'button[type="submit"]',
             'fieldset button:last-child'
         ];
 
-        for (const sel of selectors) {
-            try {
-                const els = root.querySelectorAll(sel);
-                for (const el of els) {
-                    if (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none') {
-                        return el;
+        for (const r of searchRoots) {
+            for (const sel of selectors) {
+                try {
+                    const els = r.querySelectorAll(sel);
+                    for (const el of els) {
+                        if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {
+                            const label = (el.getAttribute('aria-label') || el.innerText || '').trim();
+                            // Exclude "새 프롬프트" (New Chat) or "프롬프트 라이브러리"
+                            if (label.includes('새 프롬프트') || label.includes('New chat') || label.includes('새 대화') || label.includes('보관함')) {
+                                continue;
+                            }
+                            return el;
+                        }
                     }
-                }
-            } catch (e) {}
+                } catch (e) {}
+            }
         }
 
         try {
@@ -481,18 +483,32 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         return null;
     }
 
-    function dismissScrims() {
+    function closeDrawersAndBackdrops() {
         try {
             const scrims = document.querySelectorAll('.scrim, .chat-history-scrim, .full-screen-scrim, [class*="scrim"], [class*="backdrop"], .cdk-overlay-backdrop, mat-drawer-backdrop');
             for (const s of scrims) {
                 if (!s.closest('mat-dialog-container, [role="dialog"], [role="alertdialog"]')) {
+                    try { s.click(); } catch(e2) {}
                     s.style.display = 'none';
                     s.style.opacity = '0';
                     s.style.pointerEvents = 'none';
                 }
             }
+            const openDrawers = document.querySelectorAll('mat-drawer.mat-drawer-opened, mat-sidenav.mat-sidenav-opened, [class*="drawer"][class*="opened"], [class*="sidebar"][class*="open"]');
+            for (const d of openDrawers) {
+                const closeBtn = d.querySelector('button[aria-label*="닫기"], button[aria-label*="Close"], button[aria-label*="접기"], .close-button');
+                if (closeBtn) {
+                    try { closeBtn.click(); } catch(e3) {}
+                }
+                d.classList.remove('mat-drawer-opened', 'mat-sidenav-opened', 'opened', 'open');
+            }
+            const navClose = document.querySelectorAll('button[aria-label*="메뉴 접기"], button[aria-label*="탐색 메뉴 닫기"], button[aria-label*="사이드 탐색 창 접기"], button[aria-label*="Collapse menu"]');
+            for (const b of navClose) {
+                try { b.click(); } catch(e4) {}
+            }
         } catch(e) {}
     }
+    const dismissScrims = closeDrawersAndBackdrops;
 
     function triggerClick(el) {
         if (!el) return;
@@ -530,10 +546,15 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                 code: 'Enter',
                 keyCode: 13,
                 which: 13,
+                charCode: 13,
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                view: window
+                view: window,
+                shiftKey: false,
+                altKey: false,
+                ctrlKey: false,
+                metaKey: false
             };
             el.dispatchEvent(new KeyboardEvent('keydown', evInit));
             el.dispatchEvent(new KeyboardEvent('keypress', evInit));
@@ -543,30 +564,37 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
     function submitPromptOnce(targetInput) {
         if (!targetInput) return false;
+        closeDrawersAndBackdrops();
         wakeUpElement(targetInput);
 
         const sendBtn = findSendButton(document);
-        if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
-            triggerClick(sendBtn);
-            dismissScrims();
-            return true;
-        }
-
         if (sendBtn) {
+            try {
+                sendBtn.disabled = false;
+                sendBtn.removeAttribute('disabled');
+                sendBtn.setAttribute('aria-disabled', 'false');
+                sendBtn.classList.remove('disabled');
+            } catch(e) {}
+
             triggerClick(sendBtn);
-            setTimeout(function() {
-                const target = findInputField(document) || targetInput;
-                const len = target ? (target.innerText || target.value || '').trim().length : 0;
-                if (len > 0) {
-                    triggerEnter(target);
-                }
-            }, 120);
-            dismissScrims();
-            return true;
+            const child = sendBtn.querySelector('mat-icon, svg, span');
+            if (child) triggerClick(child);
+            const container = sendBtn.closest('.send-button-container') || sendBtn.parentElement;
+            if (container && container !== sendBtn) triggerClick(container);
         }
 
+        // Always also trigger Enter on targetInput AND rich-textarea wrapper
         triggerEnter(targetInput);
-        dismissScrims();
+        const rich = targetInput.closest('rich-textarea') || targetInput.closest('.input-area');
+        if (rich && rich !== targetInput) {
+            triggerEnter(rich);
+        }
+
+        if (targetInput.form) {
+            try { targetInput.form.requestSubmit(); } catch(fe) {}
+        }
+
+        closeDrawersAndBackdrops();
         return true;
     }
 
@@ -704,12 +732,12 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                 state.lastChangeTime = now;
                 dismissScrims();
             } else {
-                // Safety single retry ONLY if 4 seconds have passed since submitDispatched and input is still holding full text
-                if (state.submitDispatched && state.submitCount < 2 && (now - state.submitTimestamp) > 4000 && inputLen > 0) {
+                // Safety retry: if submit was dispatched, but 2 seconds later input still holds text, retry submitting
+                if (state.submitDispatched && state.submitCount < 3 && (now - state.submitTimestamp) > 2000 && inputLen > 0) {
+                    closeDrawersAndBackdrops();
                     submitPromptOnce(target);
-                    state.submitCount = 2;
+                    state.submitCount++;
                     state.submitTimestamp = now;
-                    dismissScrims();
                 }
 
                 if (elapsed > 20000 && !state.submitDispatched) {
