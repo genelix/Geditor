@@ -327,32 +327,58 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         } catch(e) {}
     }
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     function injectPromptText(target, text) {
         if (!target) return false;
         wakeUpElement(target);
 
-        // 1. execCommand insertText (native in WebKit & Chromium for contenteditable and text inputs)
         if (target.isContentEditable) {
+            target.classList.remove('ql-blank');
+            target.focus();
+
+            // 1. Synthetic ClipboardEvent ('paste') with DataTransfer
+            // This is the native, framework-supported way to paste multiline content into Quill and contenteditable
             try {
-                target.classList.remove('ql-blank');
-                const sel = window.getSelection();
-                if (sel) {
-                    const range = document.createRange();
-                    range.selectNodeContents(target);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                }
-                document.execCommand('delete', false, null);
-                document.execCommand('insertText', false, text);
-            } catch(ee) {}
+                const dt = new DataTransfer();
+                dt.setData('text/plain', text);
+                const html = text.split('\n').map(l => l.length > 0 ? `<p>${escapeHtml(l)}</p>` : '<p><br></p>').join('');
+                dt.setData('text/html', html);
+                const pasteEvt = new ClipboardEvent('paste', {
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    clipboardData: dt,
+                    view: window
+                });
+                target.dispatchEvent(pasteEvt);
+            } catch(pe) {}
 
             let cur = (target.innerText || target.textContent || '').trim();
-            if (cur.length === 0) {
-                // DOM paragraph fallback for Quill / rich editors
+
+            // 2. Direct DOM paragraph injection fallback if paste was not handled (e.g. text too short or empty)
+            if (cur.length < text.trim().length * 0.7) {
                 const paragraphs = text.split('\n');
-                target.innerHTML = paragraphs.map(p => p ? '<p>' + p + '</p>' : '<p><br></p>').join('');
+                target.innerHTML = paragraphs.map(p => p.length > 0 ? '<p>' + escapeHtml(p) + '</p>' : '<p><br></p>').join('');
                 target.classList.remove('ql-blank');
             }
+
+            // 3. Quill setText synchronization if Quill is detected on the element
+            try {
+                const q = target.__quill || target.parentElement?.__quill || target.closest('.ql-container')?.__quill || target.closest('rich-textarea')?.__quill;
+                if (q && typeof q.setText === 'function') {
+                    const curText = (target.innerText || target.textContent || '').trim();
+                    if (curText.length < text.trim().length * 0.7) {
+                        q.setText(text, 'user');
+                    }
+                }
+            } catch(qe) {}
         } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
             target.select();
             try {
@@ -369,36 +395,19 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             }
         }
 
-        // 2. Synthetic ClipboardEvent ('paste') fallback if still empty
-        if ((target.innerText || target.value || '').trim().length === 0) {
-            try {
-                const dt = new DataTransfer();
-                dt.setData('text/plain', text);
-                dt.setData('text/html', '<p>' + text.replace(/\n/g, '<br>') + '</p>');
-                const pasteEvt = new ClipboardEvent('paste', {
-                    bubbles: true,
-                    cancelable: true,
-                    composed: true,
-                    clipboardData: dt,
-                    view: window
-                });
-                target.dispatchEvent(pasteEvt);
-            } catch(pe) {}
-        }
-
-        // 3. Dispatch standard DOM events so Angular / React / Vue model detects change
+        // Dispatch input events with composed: true so Angular / Quill listeners trigger
         try {
             target.dispatchEvent(new InputEvent('beforeinput', {
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                inputType: 'insertText',
+                inputType: 'insertFromPaste',
                 data: text
             }));
             target.dispatchEvent(new InputEvent('input', {
                 bubbles: true,
                 composed: true,
-                inputType: 'insertText',
+                inputType: 'insertFromPaste',
                 data: text
             }));
             target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -1254,14 +1263,14 @@ pub async fn execute_inline_ai_prompt(
     let final_prompt = match selected_text {
         Some(ref text) if !text.trim().is_empty() => {
             format!(
-                "[사용자 지시사항]\n{}\n\n[참조 본문 내용]\n{}\n\n[작성 지침]\n- 위 내용과 사용자 지시사항에 따라 최종 결과 텍스트(또는 마크다운)만 출력하세요.\n- 인사말, 서두(예: '네, 작성해 드렸습니다'), 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 교체/삽입될 완성된 내용만 작성해 주세요.",
+                "[사용자 지시사항] {}\n\n[참조 본문 내용]\n{}\n\n[작성 지침]\n- 위 내용과 사용자 지시사항에 따라 최종 결과 텍스트(또는 마크다운)만 출력하세요.\n- 인사말, 서두(예: '네, 작성해 드렸습니다'), 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 교체/삽입될 완성된 내용만 작성해 주세요.",
                 prompt.trim(),
                 text.trim()
             )
         }
         _ => {
             format!(
-                "[사용자 지시사항]\n{}\n\n[작성 지침]\n- 위 사용자 지시사항에 따라 필요한 텍스트 또는 마크다운(코드)을 바로 작성하세요.\n- 인사말, 서두, 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 삽입될 완성된 내용만 작성해 주세요.",
+                "[사용자 지시사항] {}\n\n[작성 지침]\n- 위 사용자 지시사항에 따라 필요한 텍스트 또는 마크다운(코드)을 바로 작성하세요.\n- 인사말, 서두, 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 삽입될 완성된 내용만 작성해 주세요.",
                 prompt.trim()
             )
         }
