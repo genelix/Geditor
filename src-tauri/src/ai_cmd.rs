@@ -57,9 +57,7 @@ fn compute_snap_position_and_size(app: &AppHandle) -> Result<(PhysicalPosition<i
 
 pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 (function() {
-    if (window.__geditor_tracker_installed) return;
-    window.__geditor_tracker_installed = true;
-    window.__geditor_last_selected_text = "";
+    window.__geditor_last_selected_text = window.__geditor_last_selected_text || "";
 
     function domToMarkdown(node) {
         if (!node) return "";
@@ -302,21 +300,6 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         return null;
     }
 
-    function findQuill(el) {
-        if (!el) return null;
-        if (window.Quill && typeof window.Quill.find === 'function') {
-            try {
-                const q = window.Quill.find(el);
-                if (q) return q;
-            } catch(e) {}
-        }
-        const nodes = [el, el.parentElement, el.closest('.ql-container'), el.closest('rich-textarea')];
-        for (const n of nodes) {
-            if (n && n.__quill) return n.__quill;
-        }
-        return null;
-    }
-
     function wakeUpElement(target) {
         if (!target) return;
         try {
@@ -328,6 +311,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             const opts = {
                 bubbles: true,
                 cancelable: true,
+                composed: true,
                 view: window,
                 clientX: clientX,
                 clientY: clientY,
@@ -340,11 +324,6 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             target.dispatchEvent(new PointerEvent('pointerup', opts));
             target.dispatchEvent(new MouseEvent('mouseup', opts));
             target.dispatchEvent(new MouseEvent('click', opts));
-
-            const q = findQuill(target);
-            if (q && typeof q.update === 'function') {
-                q.update('user');
-            }
         } catch(e) {}
     }
 
@@ -352,37 +331,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         if (!target) return false;
         wakeUpElement(target);
 
-        // 1. Direct Quill API if available
-        const q = findQuill(target);
-        if (q) {
-            try {
-                q.setText('');
-                if (q.clipboard && typeof q.clipboard.dangerouslyPasteHTML === 'function') {
-                    q.clipboard.dangerouslyPasteHTML(0, text.replace(/\n/g, '<br>'), 'user');
-                } else {
-                    q.setText(text, 'user');
-                }
-                if (typeof q.setSelection === 'function') {
-                    q.setSelection(q.getLength(), 0, 'user');
-                }
-            } catch(qe) {}
-        }
-
-        // 2. Synthetic ClipboardEvent ('paste')
-        try {
-            const dt = new DataTransfer();
-            dt.setData('text/plain', text);
-            dt.setData('text/html', '<p>' + text.replace(/\n/g, '<br>') + '</p>');
-            const pasteEvt = new ClipboardEvent('paste', {
-                bubbles: true,
-                cancelable: true,
-                clipboardData: dt,
-                view: window
-            });
-            target.dispatchEvent(pasteEvt);
-        } catch(pe) {}
-
-        // 3. Selection + execCommand insertText
+        // 1. execCommand insertText (native in WebKit & Chromium for contenteditable and text inputs)
         if (target.isContentEditable) {
             try {
                 target.classList.remove('ql-blank');
@@ -393,12 +342,15 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                     sel.removeAllRanges();
                     sel.addRange(range);
                 }
+                document.execCommand('delete', false, null);
                 document.execCommand('insertText', false, text);
             } catch(ee) {}
 
-            const cur = (target.innerText || target.textContent || '').trim();
+            let cur = (target.innerText || target.textContent || '').trim();
             if (cur.length === 0) {
-                target.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
+                // DOM paragraph fallback for Quill / rich editors
+                const paragraphs = text.split('\n');
+                target.innerHTML = paragraphs.map(p => p ? '<p>' + p + '</p>' : '<p><br></p>').join('');
                 target.classList.remove('ql-blank');
             }
         } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
@@ -417,29 +369,46 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             }
         }
 
-        // 4. Dispatch standard DOM events to notify frameworks (Angular / React / Vue)
+        // 2. Synthetic ClipboardEvent ('paste') fallback if still empty
+        if ((target.innerText || target.value || '').trim().length === 0) {
+            try {
+                const dt = new DataTransfer();
+                dt.setData('text/plain', text);
+                dt.setData('text/html', '<p>' + text.replace(/\n/g, '<br>') + '</p>');
+                const pasteEvt = new ClipboardEvent('paste', {
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    clipboardData: dt,
+                    view: window
+                });
+                target.dispatchEvent(pasteEvt);
+            } catch(pe) {}
+        }
+
+        // 3. Dispatch standard DOM events so Angular / React / Vue model detects change
         try {
             target.dispatchEvent(new InputEvent('beforeinput', {
                 bubbles: true,
                 cancelable: true,
+                composed: true,
                 inputType: 'insertText',
                 data: text
             }));
             target.dispatchEvent(new InputEvent('input', {
                 bubbles: true,
+                composed: true,
                 inputType: 'insertText',
                 data: text
             }));
-            target.dispatchEvent(new Event('input', { bubbles: true }));
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-            target.dispatchEvent(new CustomEvent('text-change', { bubbles: true, detail: { source: 'user' } }));
+            target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
-            const rich = target.closest('rich-textarea');
+            const rich = target.closest('rich-textarea') || target.closest('.input-area');
             if (rich) {
                 rich.classList.remove('ql-blank');
-                rich.dispatchEvent(new Event('input', { bubbles: true }));
-                rich.dispatchEvent(new Event('change', { bubbles: true }));
-                rich.dispatchEvent(new CustomEvent('textChange', { bubbles: true }));
+                rich.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                rich.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
             }
         } catch(e) {}
 
@@ -454,17 +423,24 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             'button[aria-label*="Send"]',
             'button[aria-label*="보내기"]',
             'button[aria-label*="전송"]',
+            'button[aria-label*="제출"]',
+            'button[aria-label*="프롬프트"]',
+            'button[aria-label*="Submit"]',
+            'button[aria-label*="Prompt"]',
             'button[data-testid="send-button"]',
             '.send-button-container button',
             'button.mat-mdc-icon-button[aria-label*="Send"]',
             'button.mat-mdc-icon-button[aria-label*="보내기"]',
             'button.mat-mdc-icon-button[aria-label*="전송"]',
+            'button.mat-mdc-icon-button[aria-label*="제출"]',
             'button[mattooltip*="Send"]',
             'button[mattooltip*="보내기"]',
             'button[mattooltip*="전송"]',
+            'button[mattooltip*="제출"]',
             'div[role="button"][aria-label*="Send"]',
             'div[role="button"][aria-label*="보내기"]',
             'div[role="button"][aria-label*="전송"]',
+            'div[role="button"][aria-label*="제출"]',
             'button.send-button-container',
             '.input-area-container button.send-button',
             '.bottom-container button.send-button',
@@ -498,9 +474,9 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
 
     function dismissScrims() {
         try {
-            const scrims = document.querySelectorAll('.scrim, .chat-history-scrim, .full-screen-scrim, [class*="scrim"], [class*="backdrop"]');
+            const scrims = document.querySelectorAll('.scrim, .chat-history-scrim, .full-screen-scrim, [class*="scrim"], [class*="backdrop"], .cdk-overlay-backdrop, mat-drawer-backdrop');
             for (const s of scrims) {
-                if (!s.closest('mat-dialog-container, [role="dialog"]')) {
+                if (!s.closest('mat-dialog-container, [role="dialog"], [role="alertdialog"]')) {
                     s.style.display = 'none';
                     s.style.opacity = '0';
                     s.style.pointerEvents = 'none';
@@ -519,6 +495,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             const opts = {
                 bubbles: true,
                 cancelable: true,
+                composed: true,
                 view: window,
                 clientX: clientX,
                 clientY: clientY,
@@ -546,6 +523,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
                 which: 13,
                 bubbles: true,
                 cancelable: true,
+                composed: true,
                 view: window
             };
             el.dispatchEvent(new KeyboardEvent('keydown', evInit));
@@ -559,15 +537,21 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         wakeUpElement(targetInput);
 
         const sendBtn = findSendButton(document);
-        if (sendBtn) {
-            try {
-                sendBtn.disabled = false;
-                sendBtn.removeAttribute('disabled');
-                sendBtn.setAttribute('aria-disabled', 'false');
-                sendBtn.classList.remove('disabled');
-            } catch(e) {}
-
+        if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
             triggerClick(sendBtn);
+            dismissScrims();
+            return true;
+        }
+
+        if (sendBtn) {
+            triggerClick(sendBtn);
+            setTimeout(function() {
+                const target = findInputField(document) || targetInput;
+                const len = target ? (target.innerText || target.value || '').trim().length : 0;
+                if (len > 0) {
+                    triggerEnter(target);
+                }
+            }, 120);
             dismissScrims();
             return true;
         }
@@ -674,7 +658,7 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
             window.__geditor_ai_state.submitCount = 1;
             window.__geditor_ai_state.submitTimestamp = Date.now();
             dismissScrims();
-        }, 180);
+        }, 250);
 
         return JSON.stringify(window.__geditor_ai_state);
     };
@@ -805,26 +789,6 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         });
     };
 
-        if (elapsed > 120000) {
-            if (state.lastTextLength > 20) {
-                state.status = 'done';
-                state.resultMarkdown = typeof window.__geditor_dom_to_markdown === 'function'
-                    ? window.__geditor_dom_to_markdown(curMsg).trim()
-                    : (curMsg.innerText || '').trim();
-            } else {
-                state.status = 'error';
-                state.error = 'AI 응답 시간 초과 (120초)';
-            }
-            return JSON.stringify(state);
-        }
-
-        return JSON.stringify({
-            status: 'generating',
-            length: curLength,
-            elapsed: Math.round(elapsed / 1000)
-        });
-    };
-
     function recordSelection() {
         try {
             const text = window.__geditor_get_selection_markdown();
@@ -834,15 +798,18 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         } catch(e) {}
     }
 
-    // Capture selections continuously on user interactions
-    document.addEventListener('selectionchange', recordSelection, true);
-    window.addEventListener('mouseup', recordSelection, true);
-    window.addEventListener('keyup', recordSelection, true);
-    window.addEventListener('touchend', recordSelection, true);
-    window.addEventListener('copy', recordSelection, true);
+    // Capture selections continuously on user interactions (installed only once)
+    if (!window.__geditor_tracker_listeners_installed) {
+        window.__geditor_tracker_listeners_installed = true;
+        document.addEventListener('selectionchange', recordSelection, true);
+        window.addEventListener('mouseup', recordSelection, true);
+        window.addEventListener('keyup', recordSelection, true);
+        window.addEventListener('touchend', recordSelection, true);
+        window.addEventListener('copy', recordSelection, true);
 
-    // Continuous interval check to capture drag selections before blur
-    setInterval(recordSelection, 250);
+        // Continuous interval check to capture drag selections before blur
+        setInterval(recordSelection, 250);
+    }
 })();
 "#;
 
@@ -1360,7 +1327,7 @@ pub async fn execute_inline_ai_prompt(
                     if (typeof window.__geditor_check_inline_ai_status === 'function') {
                         return window.__geditor_check_inline_ai_status();
                     }
-                    return JSON.stringify({ status: "generating", length: 0 });
+                    return JSON.stringify({ status: "submitting", elapsed: 0, waiting_for_script: true });
                 } catch(e) {
                     return JSON.stringify({ status: "error", error: e.toString() });
                 }
@@ -1384,6 +1351,11 @@ pub async fn execute_inline_ai_prompt(
 
         let json_str: String = serde_json::from_str(&raw_res).unwrap_or(raw_res);
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if val.get("waiting_for_script").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if start_time.elapsed() > std::time::Duration::from_millis(1500) {
+                    let _ = webview.eval(AI_SELECTION_TRACKER_SCRIPT);
+                }
+            }
             let status = val.get("status").and_then(|v| v.as_str()).unwrap_or("");
             if status == "done" {
                 let markdown = val.get("resultMarkdown")
