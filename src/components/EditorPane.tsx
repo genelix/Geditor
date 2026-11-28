@@ -37,9 +37,10 @@ import {
   Quote,
   CheckSquare2,
 } from 'lucide-react';
-import { extractAiCode, adjustIndentation, generateAiPrompt } from '../utils/aiCodeParser';
+import { extractAiCode, adjustIndentation, generateAiPrompt, cleanInlineAiOutput } from '../utils/aiCodeParser';
 import { applyMarkdownFormat, MarkdownFormatType } from '../utils/markdownFormatter';
 import { CursorLineInfo, ScrollRatioInfo } from './MarkdownPreview';
+import { InlineAiWidget } from './InlineAiWidget';
 
 // Configure monaco to use local installation (offline-ready)
 loader.config({ monaco });
@@ -79,6 +80,32 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // Synchronized cursor and scroll states for split markdown view
   const [cursorLineInfo, setCursorLineInfo] = useState<CursorLineInfo | null>(null);
   const [scrollRatioInfo, setScrollRatioInfo] = useState<ScrollRatioInfo | null>(null);
+
+  // Editor container ref for positioning floating widgets
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Inline AI Floating Widget State
+  const [inlineAiState, setInlineAiState] = useState<{
+    isOpen: boolean;
+    position: { top: number; left: number };
+    hasSelection: boolean;
+    selectedLineCount: number;
+    selectedRange: monaco.Range | null;
+    cursorPosition: monaco.Position | null;
+    isLoading: boolean;
+    statusText: string;
+    error: string | null;
+  }>({
+    isOpen: false,
+    position: { top: 60, left: 60 },
+    hasSelection: false,
+    selectedLineCount: 0,
+    selectedRange: null,
+    cursorPosition: null,
+    isLoading: false,
+    statusText: '',
+    error: null,
+  });
 
   // Markdown format applicator helper
   const handleApplyMdFormat = async (type: MarkdownFormatType) => {
@@ -228,27 +255,153 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   };
 
-  // Ask AI directly with selected code pre-filled into AI chat box
+  // Ask AI directly with selected text pre-filled into AI chat box
   const handleAskAiWithSelection = async () => {
     const editor = editorRef.current;
     if (!editor) return;
     const sel = editor.getSelection();
     const model = editor.getModel();
     if (!sel || sel.isEmpty() || !model) {
-      showToast?.('AI에 질문할 텍스트나 코드를 먼저 선택해 주세요.');
+      showToast?.('💡 본문에서 AI 입력창에 붙여넣을 텍스트를 먼저 드래그하여 선택해 주세요.');
       return;
     }
 
     const selectedCode = model.getValueInRange(sel);
-    const prompt = generateAiPrompt(selectedCode, tab.language, 'general');
+    if (!selectedCode.trim()) {
+      showToast?.('💡 본문에서 AI 입력창에 붙여넣을 텍스트를 먼저 드래그하여 선택해 주세요.');
+      return;
+    }
+
+    // Direct selected text pasted into AI chat box
+    const prompt = selectedCode.trim();
 
     try {
-      showToast?.('🤖 AI 도우미 창을 열고 선택한 질문을 자동 입력합니다...');
+      showToast?.('🤖 선택한 본문 텍스트를 AI 입력창에 붙여넣는 중...');
       await tauriApi.askAiWithPrompt(prompt);
+      showToast?.('✅ 선택한 본문 텍스트가 AI 입력창에 입력되었습니다.');
     } catch (err) {
       console.error('Failed to ask AI with prompt:', err);
       showToast?.(`AI 질문 연동 실패: ${err}`);
     }
+  };
+
+  // Open Floating Inline AI Assistant
+  const handleOpenInlineAi = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sel = editor.getSelection();
+    const pos = editor.getPosition();
+    const model = editor.getModel();
+
+    const hasSel = Boolean(sel && !sel.isEmpty() && model);
+    let lineCount = 0;
+    if (hasSel && sel) {
+      lineCount = Math.abs(sel.endLineNumber - sel.startLineNumber) + 1;
+    }
+
+    // Position relative to editor viewport
+    const visiblePos = editor.getScrolledVisiblePosition(pos || { lineNumber: 1, column: 1 });
+    let top = (visiblePos?.top || 70) + (visiblePos?.height || 22) + 8;
+    let left = Math.max(20, Math.min(window.innerWidth - 560, visiblePos?.left || 40));
+
+    const containerHeight = editorContainerRef.current?.clientHeight || 600;
+    if (top + 230 > containerHeight) {
+      top = Math.max(20, (visiblePos?.top || 70) - 230);
+    }
+
+    // Ensure AI side panel webview is active
+    window.dispatchEvent(new CustomEvent('geditor-open-ai-panel'));
+
+    setInlineAiState({
+      isOpen: true,
+      position: { top, left },
+      hasSelection: hasSel,
+      selectedLineCount: lineCount,
+      selectedRange: sel
+        ? new monaco.Range(sel.startLineNumber, sel.startColumn, sel.endLineNumber, sel.endColumn)
+        : null,
+      cursorPosition: pos ? new monaco.Position(pos.lineNumber, pos.column) : null,
+      isLoading: false,
+      statusText: '',
+      error: null,
+    });
+  };
+
+  // Submit and execute Inline AI Generation
+  const handleSubmitInlineAi = async (userPrompt: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    setInlineAiState((prev) => ({
+      ...prev,
+      isLoading: true,
+      statusText: 'AI가 내용을 생성 중입니다...',
+      error: null,
+    }));
+
+    try {
+      const model = editor.getModel();
+      let selectedSnippet: string | undefined = undefined;
+      if (inlineAiState.hasSelection && inlineAiState.selectedRange && model) {
+        selectedSnippet = model.getValueInRange(inlineAiState.selectedRange);
+      }
+
+      showToast?.('🤖 AI가 본문 내용을 생성 중입니다...');
+      const rawOutput = await tauriApi.executeInlineAi(userPrompt, selectedSnippet);
+      const isMd = tab.language === 'markdown' || tab.name.endsWith('.md');
+      const cleaned = cleanInlineAiOutput(rawOutput, isMd);
+
+      editor.focus();
+      if (inlineAiState.hasSelection && inlineAiState.selectedRange) {
+        editor.executeEdits('inline-ai', [
+          {
+            range: inlineAiState.selectedRange,
+            text: cleaned,
+            forceMoveMarkers: true,
+          },
+        ]);
+        const endPos = editor.getPosition();
+        if (endPos) editor.revealPositionInCenterIfOutsideViewport(endPos);
+      } else if (inlineAiState.cursorPosition) {
+        const cp = inlineAiState.cursorPosition;
+        const insertRange = new monaco.Range(cp.lineNumber, cp.column, cp.lineNumber, cp.column);
+        editor.executeEdits('inline-ai', [
+          {
+            range: insertRange,
+            text: cleaned,
+            forceMoveMarkers: true,
+          },
+        ]);
+        const endPos = editor.getPosition();
+        if (endPos) editor.revealPositionInCenterIfOutsideViewport(endPos);
+      }
+
+      setInlineAiState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
+      showToast?.('✨ AI 생성이 완료되었습니다! (⌘Z 로 실행 취소 가능)');
+    } catch (err: any) {
+      console.error('Inline AI execution failed:', err);
+      const msg = typeof err === 'string' ? err : err?.message || 'AI 생성에 실패했습니다.';
+      setInlineAiState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: msg,
+      }));
+      showToast?.(`AI 생성 오류: ${msg}`);
+    }
+  };
+
+  const handleCancelInlineAi = async () => {
+    try {
+      await tauriApi.cancelInlineAi();
+    } catch (e) {}
+    setInlineAiState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
+    editorRef.current?.focus();
+    showToast?.('AI 생성이 취소되었습니다.');
+  };
+
+  const handleCloseInlineAi = () => {
+    setInlineAiState((prev) => ({ ...prev, isOpen: false, isLoading: false, error: null }));
+    editorRef.current?.focus();
   };
 
   // Listen to custom smart insert event (dispatched by App.tsx, TopMenuBar or shortcuts)
@@ -259,6 +412,9 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     const onAskAi = () => {
       handleAskAiWithSelection();
     };
+    const onInlineAi = () => {
+      handleOpenInlineAi();
+    };
     const onInsertText = (e: Event) => {
       const customEvent = e as CustomEvent<{ text: string }>;
       const text = customEvent.detail?.text;
@@ -268,10 +424,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     };
     window.addEventListener('geditor-smart-insert-ai', onAiInsert);
     window.addEventListener('geditor-ask-ai', onAskAi);
+    window.addEventListener('geditor-inline-ai', onInlineAi);
     window.addEventListener('geditor-insert-text', onInsertText);
     return () => {
       window.removeEventListener('geditor-smart-insert-ai', onAiInsert);
       window.removeEventListener('geditor-ask-ai', onAskAi);
+      window.removeEventListener('geditor-inline-ai', onInlineAi);
       window.removeEventListener('geditor-insert-text', onInsertText);
     };
   }, []);
@@ -282,6 +440,11 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     // Register Alt+V / Option+V inside Monaco Editor
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyV, () => {
       handleSmartInsertAiCode();
+    });
+
+    // Register Alt+K / Option+K to open Inline AI Assist
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyK, () => {
+      handleOpenInlineAi();
     });
 
     // Register Alt+A / Option+A to ask AI with current selection
@@ -515,7 +678,13 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       },
     },
     {
-      label: 'AI에 질문하기 (자동 입력)',
+      label: 'AI 인라인 작성 / 수정',
+      icon: <Sparkles size={14} color="#a855f7" />,
+      shortcut: isMac ? '⌥K' : 'Alt+K',
+      onClick: handleOpenInlineAi,
+    },
+    {
+      label: '선택 텍스트를 AI 입력창에 붙여넣기',
       icon: <Sparkles size={14} color="#38bdf8" />,
       shortcut: isMac ? '⌥A' : 'Alt+A',
       disabled: !hasSelection,
@@ -997,6 +1166,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         {/* Editor component */}
         {(tab.viewMode === 'edit' || ((isMarkdown || isHtml) && tab.viewMode === 'split')) && (
           <div
+            ref={editorContainerRef}
             style={{
               flex: tab.viewMode === 'split' ? '0 0 50%' : 1,
               width: tab.viewMode === 'split' ? '50%' : '100%',
@@ -1034,6 +1204,21 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
                 bracketPairColorization: { enabled: true },
                 links: true,
               }}
+            />
+
+            {/* Floating Inline AI Widget (⌥K / Alt+K) */}
+            <InlineAiWidget
+              isOpen={inlineAiState.isOpen}
+              isLight={isLight}
+              position={inlineAiState.position}
+              hasSelection={inlineAiState.hasSelection}
+              selectedLineCount={inlineAiState.selectedLineCount}
+              isLoading={inlineAiState.isLoading}
+              statusText={inlineAiState.statusText}
+              error={inlineAiState.error}
+              onSubmit={handleSubmitInlineAi}
+              onCancel={handleCancelInlineAi}
+              onClose={handleCloseInlineAi}
             />
           </div>
         )}

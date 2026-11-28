@@ -180,6 +180,16 @@ export const tauriApi = {
     return await invoke('ask_ai_with_prompt', { prompt, service });
   },
 
+  // Execute inline AI generation and wait for completed response
+  executeInlineAi: async (prompt: string, selectedText?: string): Promise<string> => {
+    return await invoke<string>('execute_inline_ai_prompt', { prompt, selectedText });
+  },
+
+  // Cancel active inline AI generation
+  cancelInlineAi: async (): Promise<void> => {
+    return await invoke('cancel_inline_ai');
+  },
+
   // Native Native Clipboard (bypasses browser permissions & WebKit Paste tooltip popups)
   readClipboard: async (): Promise<string> => {
     try {

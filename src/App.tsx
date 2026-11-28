@@ -242,6 +242,17 @@ export default function App() {
     };
   }, []);
 
+  // Ensure AI Side Panel is opened when triggered by inline AI assist
+  useEffect(() => {
+    const handleOpenAiPanelEvent = () => {
+      setIsAiPanelOpen(true);
+    };
+    window.addEventListener('geditor-open-ai-panel', handleOpenAiPanelEvent);
+    return () => {
+      window.removeEventListener('geditor-open-ai-panel', handleOpenAiPanelEvent);
+    };
+  }, []);
+
   const handleUpdateSettings = (newSettings: EditorSettings) => {
     setSettings(newSettings);
     try {
@@ -1202,6 +1213,8 @@ export default function App() {
         handleSnapAiAssistant();
       } else if (id === 'ai_always_on_top') {
         handleToggleAiAlwaysOnTop();
+      } else if (id === 'ai_inline') {
+        window.dispatchEvent(new CustomEvent('geditor-inline-ai'));
       } else if (id === 'ai_ask') {
         handleAskAiWithSelection();
       } else if (id === 'ai_smart_insert') {
@@ -1435,6 +1448,7 @@ export default function App() {
           activeService={activeAiService}
           onChangeService={(svc) => setActiveAiService(svc)}
           onPasteSelectedToEditor={handlePasteAiSelectionToEditor}
+          onAskAiWithSelection={handleAskAiWithSelection}
           onReload={() => tauriApi.reloadAiPanel().catch(console.error)}
           onPopOutToWindow={handlePopOutAiWindow}
           onClose={() => setIsAiPanelOpen(false)}

@@ -36,7 +36,6 @@ pub fn terminal_spawn(
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
     };
-
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
 

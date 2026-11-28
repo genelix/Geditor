@@ -262,6 +262,270 @@ pub const AI_SELECTION_TRACKER_SCRIPT: &str = r#"
         }
     };
 
+    window.__geditor_dom_to_markdown = domToMarkdown;
+
+    function findInputField(root) {
+        if (!root) return null;
+        const selectors = [
+            '#prompt-textarea',
+            'rich-textarea div[contenteditable="true"]',
+            'rich-textarea .ql-editor',
+            'rich-textarea p',
+            'div.ProseMirror[contenteditable="true"]',
+            'div[contenteditable="true"][role="textbox"]',
+            'fieldset div[contenteditable="true"]',
+            'div[contenteditable="true"]',
+            'textarea:not([disabled])',
+            'input[type="text"]:not([disabled])'
+        ];
+
+        for (const sel of selectors) {
+            try {
+                const el = root.querySelector(sel);
+                if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {
+                    return el;
+                }
+            } catch (e) {}
+        }
+
+        try {
+            const all = root.querySelectorAll('*');
+            for (const el of all) {
+                if (el.shadowRoot) {
+                    const found = findInputField(el.shadowRoot);
+                    if (found) return found;
+                }
+            }
+        } catch (e) {}
+
+        return null;
+    }
+
+    function findSendButton(root) {
+        if (!root) return null;
+        const selectors = [
+            'button[aria-label*="Send"]',
+            'button[aria-label*="전송"]',
+            'button[aria-label*="보내기"]',
+            'button[data-testid="send-button"]',
+            'button.send-button',
+            '.send-button-container button',
+            'button[mattooltip*="Send"]',
+            'button[mattooltip*="전송"]',
+            'button[type="submit"]',
+            'fieldset button:last-child'
+        ];
+
+        for (const sel of selectors) {
+            try {
+                const els = root.querySelectorAll(sel);
+                for (const el of els) {
+                    if (el.offsetParent !== null || el.offsetHeight > 0) {
+                        return el;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        try {
+            const all = root.querySelectorAll('*');
+            for (const el of all) {
+                if (el.shadowRoot) {
+                    const found = findSendButton(el.shadowRoot);
+                    if (found) return found;
+                }
+            }
+        } catch (e) {}
+
+        return null;
+    }
+
+    function isStopOrGeneratingPresent() {
+        const stopSelectors = [
+            'button[aria-label*="Stop"]',
+            'button[aria-label*="중지"]',
+            'button[aria-label*="중단"]',
+            'button[data-testid="stop-button"]',
+            'button.stop-button',
+            '.stop-icon',
+            '[data-is-streaming="true"]',
+            '.result-streaming',
+            '.streaming',
+            'mat-progress-spinner'
+        ];
+        for (const sel of stopSelectors) {
+            const el = document.querySelector(sel);
+            if (el && (el.offsetParent !== null || el.offsetHeight > 0)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getLatestAssistantMessage() {
+        const msgSelectors = [
+            'message-content',
+            'model-response',
+            'div[data-test-id="model-response"]',
+            'div.model-response-text',
+            '.response-container',
+            'div[data-message-author-role="assistant"]',
+            '.font-claude-message',
+            '[data-role="assistant"]',
+            '.chat-message.assistant',
+            '.bot-message',
+            '.agent-turn'
+        ];
+        for (const sel of msgSelectors) {
+            const list = document.querySelectorAll(sel);
+            if (list.length > 0) {
+                return list[list.length - 1];
+            }
+        }
+        const mdList = document.querySelectorAll('.markdown');
+        if (mdList.length > 0) {
+            return mdList[mdList.length - 1];
+        }
+        return null;
+    }
+
+    window.__geditor_start_inline_ai = function(text) {
+        window.__geditor_ai_state = {
+            status: 'starting',
+            startTime: Date.now(),
+            lastTextLength: 0,
+            lastChangeTime: Date.now(),
+            resultMarkdown: null,
+            error: null
+        };
+
+        const target = findInputField(document);
+        if (!target) {
+            window.__geditor_ai_state.status = 'error';
+            window.__geditor_ai_state.error = 'AI 입력 필드를 찾을 수 없습니다.';
+            return JSON.stringify(window.__geditor_ai_state);
+        }
+
+        target.focus();
+        try {
+            if (target.isContentEditable) {
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(target);
+                if (sel) {
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                const inserted = document.execCommand('insertText', false, text);
+                if (!inserted) {
+                    target.innerText = text;
+                    target.dispatchEvent(new InputEvent('beforeinput', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: text
+                    }));
+                    target.dispatchEvent(new InputEvent('input', {
+                        bubbles: true,
+                        inputType: 'insertText',
+                        data: text
+                    }));
+                }
+            } else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+                target.select();
+                const inserted = document.execCommand('insertText', false, text);
+                if (!inserted || target.value !== text) {
+                    const proto = target.tagName === 'TEXTAREA'
+                        ? window.HTMLTextAreaElement.prototype
+                        : window.HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                    if (setter) {
+                        setter.call(target, text);
+                    } else {
+                        target.value = text;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Inline AI text injection error:', e);
+        }
+
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+
+        setTimeout(function() {
+            const sendBtn = findSendButton(document);
+            if (sendBtn && !sendBtn.disabled) {
+                sendBtn.click();
+            } else {
+                target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                target.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                target.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            }
+            window.__geditor_ai_state.status = 'generating';
+            window.__geditor_ai_state.lastChangeTime = Date.now();
+        }, 120);
+
+        return JSON.stringify(window.__geditor_ai_state);
+    };
+
+    window.__geditor_check_inline_ai_status = function() {
+        if (!window.__geditor_ai_state) {
+            return JSON.stringify({ status: 'error', error: 'AI 상태가 초기화되지 않았습니다.' });
+        }
+        const state = window.__geditor_ai_state;
+        if (state.status === 'done' || state.status === 'error') {
+            return JSON.stringify(state);
+        }
+
+        const curMsg = getLatestAssistantMessage();
+        const curLength = curMsg ? (curMsg.innerText || curMsg.textContent || '').trim().length : 0;
+        const now = Date.now();
+
+        if (curLength > state.lastTextLength) {
+            state.lastTextLength = curLength;
+            state.lastChangeTime = now;
+            state.status = 'generating';
+        }
+
+        const isGenerating = isStopOrGeneratingPresent();
+        const quietDuration = now - state.lastChangeTime;
+        const elapsed = now - state.startTime;
+
+        if (state.lastTextLength >= 10 && !isGenerating && quietDuration >= 1400) {
+            state.status = 'done';
+            if (typeof domToMarkdown === 'function') {
+                state.resultMarkdown = domToMarkdown(curMsg).trim();
+            } else {
+                state.resultMarkdown = (curMsg.innerText || curMsg.textContent || '').trim();
+            }
+            return JSON.stringify(state);
+        }
+
+        if (state.lastTextLength === 0 && elapsed > 18000) {
+            state.status = 'error';
+            state.error = 'AI 응답 시작을 감지하지 못했습니다. 웹페이지 로그인 및 연결 상태를 확인해 주세요.';
+            return JSON.stringify(state);
+        }
+
+        if (elapsed > 120000) {
+            if (state.lastTextLength > 20) {
+                state.status = 'done';
+                state.resultMarkdown = typeof domToMarkdown === 'function' ? domToMarkdown(curMsg).trim() : (curMsg.innerText || '').trim();
+            } else {
+                state.status = 'error';
+                state.error = 'AI 응답 시간 초과 (120초)';
+            }
+            return JSON.stringify(state);
+        }
+
+        return JSON.stringify({
+            status: 'generating',
+            length: curLength,
+            elapsed: Math.round(elapsed / 1000)
+        });
+    };
+
     function recordSelection() {
         try {
             const text = window.__geditor_get_selection_markdown();
@@ -559,7 +823,7 @@ pub async fn ask_ai_with_prompt(
     prompt: String,
     _service: Option<String>,
 ) -> Result<(), String> {
-    // 1. Write prompt to native clipboard
+    // 1. Write prompt to native clipboard as backup
     let _ = crate::clipboard_cmd::write_clipboard_text(prompt.clone());
 
     // 2. Prepare injection script
@@ -569,48 +833,85 @@ pub async fn ask_ai_with_prompt(
         (function() {{
             const text = {};
             let attempts = 0;
-            const maxAttempts = 30;
+            const maxAttempts = 35;
 
-            function tryInject() {{
-                attempts++;
+            function findInputField(root) {{
+                if (!root) return null;
                 const selectors = [
                     '#prompt-textarea',
                     'rich-textarea div[contenteditable="true"]',
                     'rich-textarea .ql-editor',
+                    'rich-textarea p',
                     'div.ProseMirror[contenteditable="true"]',
-                    'fieldset div[contenteditable="true"]',
                     'div[contenteditable="true"][role="textbox"]',
+                    'fieldset div[contenteditable="true"]',
                     'div[contenteditable="true"]',
                     'textarea:not([disabled])',
                     'input[type="text"]:not([disabled])'
                 ];
 
-                let target = null;
                 for (const sel of selectors) {{
-                    const el = document.querySelector(sel);
-                    if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {{
-                        target = el;
-                        break;
-                    }}
+                    try {{
+                        const el = root.querySelector(sel);
+                        if (el && (el.offsetParent !== null || el.offsetHeight > 0 || window.getComputedStyle(el).display !== 'none')) {{
+                            return el;
+                        }}
+                    }} catch (e) {{}}
                 }}
+
+                // Search shadow roots recursively
+                try {{
+                    const all = root.querySelectorAll('*');
+                    for (const el of all) {{
+                        if (el.shadowRoot) {{
+                            const found = findInputField(el.shadowRoot);
+                            if (found) return found;
+                        }}
+                    }}
+                }} catch (e) {{}}
+
+                return null;
+            }}
+
+            function tryInject() {{
+                attempts++;
+                const target = findInputField(document);
 
                 if (target) {{
                     target.focus();
                     let inserted = false;
                     try {{
                         if (target.isContentEditable) {{
-                            document.execCommand('selectAll', false, null);
+                            const sel = window.getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(target);
+                            if (sel) {{
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                            }}
                             inserted = document.execCommand('insertText', false, text);
+                            if (!inserted) {{
+                                target.innerText = text;
+                                target.dispatchEvent(new InputEvent('beforeinput', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    inputType: 'insertText',
+                                    data: text
+                                }}));
+                                target.dispatchEvent(new InputEvent('input', {{
+                                    bubbles: true,
+                                    inputType: 'insertText',
+                                    data: text
+                                }}));
+                            }}
                         }} else if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {{
                             target.select();
                             inserted = document.execCommand('insertText', false, text);
-                            if (!inserted) {{
-                                const setter = Object.getOwnPropertyDescriptor(
-                                    target.tagName === 'TEXTAREA'
-                                        ? window.HTMLTextAreaElement.prototype
-                                        : window.HTMLInputElement.prototype,
-                                    'value'
-                                )?.set;
+                            if (!inserted || target.value !== text) {{
+                                const proto = target.tagName === 'TEXTAREA'
+                                    ? window.HTMLTextAreaElement.prototype
+                                    : window.HTMLInputElement.prototype;
+                                const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
                                 if (setter) {{
                                     setter.call(target, text);
                                 }} else {{
@@ -628,7 +929,7 @@ pub async fn ask_ai_with_prompt(
                 }}
 
                 if (attempts < maxAttempts) {{
-                    setTimeout(tryInject, 250);
+                    setTimeout(tryInject, 200);
                 }}
                 return false;
             }}
@@ -639,34 +940,180 @@ pub async fn ask_ai_with_prompt(
         encoded_prompt
     );
 
-    // 3. Inject into ai-panel if it exists
+    // 3. Inject with retries into ai-panel and ai-assistant window
+    let app_clone = app.clone();
+    let script_clone = script.clone();
+    tokio::spawn(async move {
+        for delay in [0, 120, 350, 800, 1500, 2500] {
+            if delay > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+            }
+            if let Some(panel) = app_clone.get_webview("ai-panel") {
+                let _ = panel.set_focus();
+                let _ = panel.eval(&script_clone);
+            }
+            if let Some(ai_win) = app_clone.get_webview_window("ai-assistant") {
+                let _ = ai_win.show();
+                let _ = ai_win.set_focus();
+                let _ = ai_win.eval(&script_clone);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Execute inline AI prompt: injects prompt into AI webview, triggers generation,
+/// monitors streaming completion, and extracts the resulting markdown text.
+#[tauri::command]
+pub async fn execute_inline_ai_prompt(
+    app: AppHandle,
+    prompt: String,
+    selected_text: Option<String>,
+) -> Result<String, String> {
+    let webview = if let Some(panel) = app.get_webview("ai-panel") {
+        panel
+    } else if let Some(ai_win) = app.get_webview_window("ai-assistant") {
+        ai_win.as_ref().clone()
+    } else {
+        return Err("AI 도우미 패널이 준비되지 않았습니다. AI 패널을 먼저 열어주세요.".to_string());
+    };
+
+    // Ensure the tracker and inline script are active in the webview
+    let _ = webview.eval(AI_SELECTION_TRACKER_SCRIPT);
+
+    let final_prompt = match selected_text {
+        Some(ref text) if !text.trim().is_empty() => {
+            format!(
+                "[사용자 지시사항]\n{}\n\n[참조 본문 내용]\n{}\n\n[작성 지침]\n- 위 내용과 사용자 지시사항에 따라 최종 결과 텍스트(또는 마크다운)만 출력하세요.\n- 인사말, 서두(예: '네, 작성해 드렸습니다'), 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 교체/삽입될 완성된 내용만 작성해 주세요.",
+                prompt.trim(),
+                text.trim()
+            )
+        }
+        _ => {
+            format!(
+                "[사용자 지시사항]\n{}\n\n[작성 지침]\n- 위 사용자 지시사항에 따라 필요한 텍스트 또는 마크다운(코드)을 바로 작성하세요.\n- 인사말, 서두, 맺음말 등 부연 설명은 일절 생략하고, 에디터 본문에 바로 삽입될 완성된 내용만 작성해 주세요.",
+                prompt.trim()
+            )
+        }
+    };
+
+    let encoded_prompt = serde_json::to_string(&final_prompt).unwrap_or_else(|_| format!("\"{}\"", final_prompt));
+
+    let start_script = format!(
+        r#"
+        (function() {{
+            try {{
+                if (typeof window.__geditor_start_inline_ai === 'function') {{
+                    return window.__geditor_start_inline_ai({});
+                }} else {{
+                    return JSON.stringify({{ status: "error", error: "AI 스크립트가 로드되지 않았습니다." }});
+                }}
+            }} catch(e) {{
+                return JSON.stringify({{ status: "error", error: e.toString() }});
+            }}
+        }})()
+        "#,
+        encoded_prompt
+    );
+
+    webview.eval(&start_script).map_err(|e| e.to_string())?;
+
+    let start_time = std::time::Instant::now();
+    let max_duration = std::time::Duration::from_secs(120);
+
+    loop {
+        if start_time.elapsed() > max_duration {
+            return Err("AI 응답 대기 시간이 초과되었습니다 (120초).".to_string());
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let tx_arc = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+        let tx_clone = tx_arc.clone();
+
+        let check_script = r#"
+            (function() {
+                try {
+                    if (typeof window.__geditor_check_inline_ai_status === 'function') {
+                        return window.__geditor_check_inline_ai_status();
+                    }
+                    return JSON.stringify({ status: "generating", length: 0 });
+                } catch(e) {
+                    return JSON.stringify({ status: "error", error: e.toString() });
+                }
+            })()
+        "#;
+
+        if let Err(e) = webview.eval_with_callback(check_script, move |result| {
+            if let Ok(mut lock) = tx_clone.lock() {
+                if let Some(sender) = lock.take() {
+                    let _ = sender.send(result);
+                }
+            }
+        }) {
+            return Err(e.to_string());
+        }
+
+        let raw_res = match tokio::time::timeout(tokio::time::Duration::from_millis(2000), rx).await {
+            Ok(Ok(s)) => s,
+            _ => continue,
+        };
+
+        let json_str: String = serde_json::from_str(&raw_res).unwrap_or(raw_res);
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            let status = val.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if status == "done" {
+                let markdown = val.get("resultMarkdown")
+                    .or_else(|| val.get("markdown"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                return Ok(markdown);
+            } else if status == "error" {
+                let err = val.get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("AI 응답 처리 중 오류가 발생했습니다.")
+                    .to_string();
+                return Err(err);
+            }
+        }
+    }
+}
+
+/// Cancel active inline AI generation in webview
+#[tauri::command]
+pub async fn cancel_inline_ai(app: AppHandle) -> Result<(), String> {
+    let script = r#"
+        (function() {
+            try {
+                if (window.__geditor_ai_state) {
+                    window.__geditor_ai_state.status = 'error';
+                    window.__geditor_ai_state.error = '사용자에 의해 취소되었습니다.';
+                }
+                const stopSelectors = [
+                    'button[aria-label*="Stop"]',
+                    'button[aria-label*="중지"]',
+                    'button[aria-label*="중단"]',
+                    'button[data-testid="stop-button"]',
+                    'button.stop-button'
+                ];
+                for (const sel of stopSelectors) {
+                    const el = document.querySelector(sel);
+                    if (el && (el.offsetParent !== null || el.offsetHeight > 0)) {
+                        el.click();
+                        break;
+                    }
+                }
+            } catch(e) {}
+        })()
+    "#;
     if let Some(panel) = app.get_webview("ai-panel") {
-        let _ = panel.set_focus();
-        let _ = panel.eval(&script);
-        let panel_clone = panel.clone();
-        let script_clone = script.clone();
-        tokio::spawn(async move {
-            for delay in [500, 1200, 2500] {
-                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                let _ = panel_clone.eval(&script_clone);
-            }
-        });
+        let _ = panel.eval(script);
     }
-
-    // Also inject into ai-assistant window if it exists
     if let Some(ai_win) = app.get_webview_window("ai-assistant") {
-        let _ = ai_win.show();
-        let _ = ai_win.set_focus();
-        let _ = ai_win.eval(&script);
-        let win_clone = ai_win.clone();
-        let script_clone = script.clone();
-        tokio::spawn(async move {
-            for delay in [500, 1200, 2500] {
-                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                let _ = win_clone.eval(&script_clone);
-            }
-        });
+        let _ = ai_win.eval(script);
     }
-
     Ok(())
 }

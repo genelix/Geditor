@@ -8,6 +8,7 @@ import {
   ClipboardPaste,
   Building2,
   Globe,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 interface AiSidePanelProps {
@@ -18,6 +19,7 @@ interface AiSidePanelProps {
   activeService: 'gemini' | 'chatgpt' | 'claude' | 'enterprise';
   onChangeService: (service: 'gemini' | 'chatgpt' | 'claude' | 'enterprise') => void;
   onPasteSelectedToEditor: () => void;
+  onAskAiWithSelection?: () => void;
   onReload: () => void;
   onPopOutToWindow: () => void;
   onClose: () => void;
@@ -33,6 +35,7 @@ export const AiSidePanel: React.FC<AiSidePanelProps> = ({
   activeService,
   onChangeService,
   onPasteSelectedToEditor,
+  onAskAiWithSelection,
   onReload,
   onPopOutToWindow,
   onClose,
@@ -214,6 +217,38 @@ export const AiSidePanel: React.FC<AiSidePanelProps> = ({
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            {/* "본문선택글 AI입력" 버튼 */}
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+              }}
+              onClick={() => {
+                if (onAskAiWithSelection) {
+                  onAskAiWithSelection();
+                } else {
+                  window.dispatchEvent(new CustomEvent('geditor-ask-ai'));
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 9px',
+                borderRadius: '5px',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid #3f3f46',
+                backgroundColor: isLight ? '#f8fafc' : '#27272a',
+                color: isLight ? '#475569' : '#cbd5e1',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="에디터 본문에서 드래그하여 선택한 텍스트를 AI 입력창으로 자동 전달합니다 (⌥A)"
+            >
+              <ArrowRightLeft size={12} color="#38bdf8" />
+              <span>본문선택글 AI입력</span>
+            </button>
+
             {/* "선택영역 본문붙혀넣기" 버튼 */}
             <button
               onMouseDown={(e) => {
